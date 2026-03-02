@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AgriSmart – Create Account</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="auth.css"/>
+</head>
+<body>
+
+  <div class="left-panel">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24"><path d="M17 8C8 10 5.9 16.17 3.82 21.34L5.71 22l1-2.3A4.49 4.49 0 0 0 8 20C19 20 22 3 22 3c-1 2-8 2-8 2 0 0 7-1 8 5-2-1-8-1-8 5 3-1 6 0 6 5-1-4-10-5-11 0 1-1 2.5-1 3 0-1 0-2.5.5-3 2 1-1 3-1 4 0-1-2-6-3-8 0 2-2 4-3 5-8 1-5 3-8 5-10z"/></svg>
+      </div>
+      <span class="brand-name">AgriSmart</span>
+    </div>
+    <div class="circle-mid"></div>
+    <div class="hero-text">
+      <h1>Join the Smart<br/>Farming Revolution</h1>
+      <p>Create your account and start leveraging AI-powered tools to optimize your agricultural operations and boost productivity.</p>
+    </div>
+  </div>
+
+  <div class="right-panel">
+    <div class="form-card">
+      <h2>Create Account</h2>
+      <p class="subtitle">Get started with AgriSmart</p>
+
+      <div class="field" id="nameField">
+        <label for="fullname">Full Name</label>
+        <div class="input-wrap">
+          <span class="icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+              <circle cx="12" cy="7" r="4"/>
+            </svg>
+          </span>
+          <input type="text" id="fullname" placeholder="Enter your full name" autocomplete="name"/>
+        </div>
+        <span class="err-msg">Please enter your full name.</span>
+      </div>
+
+      <div class="field" id="emailField">
+        <label for="email">Email Address</label>
+        <div class="input-wrap">
+          <span class="icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+              <polyline points="22,6 12,13 2,6"/>
+            </svg>
+          </span>
+          <input type="email" id="email" placeholder="you@example.com" autocomplete="email"/>
+        </div>
+        <span class="err-msg">Please enter a valid email address.</span>
+      </div>
+
+      <div class="field" id="pwField">
+        <label for="password">Password</label>
+        <div class="input-wrap">
+          <span class="icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </span>
+          <input type="password" id="password" placeholder="Create a password" autocomplete="new-password"/>
+          <button class="toggle-pw" id="togglePw1" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+        </div>
+        <span class="err-msg">Password must be at least 6 characters.</span>
+      </div>
+
+      <div class="field" id="cpwField">
+        <label for="confirmPw">Confirm Password</label>
+        <div class="input-wrap">
+          <span class="icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </span>
+          <input type="password" id="confirmPw" placeholder="Confirm your password" autocomplete="new-password"/>
+          <button class="toggle-pw" id="togglePw2" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+        </div>
+        <span class="err-msg">Passwords do not match.</span>
+      </div>
+
+      <div class="field" id="roleField">
+        <label for="role">Role</label>
+        <div class="input-wrap select-wrap">
+          <select id="role">
+            <option value="worker">Worker</option>
+            <option value="admin">Admin</option>
+            <option value="supervisor">Supervisor</option>
+          </select>
+        </div>
+      </div>
+
+      <button class="btn-primary" id="createBtn">Create Account</button>
+
+      <p class="signin-link">Already have an account? <a href="login.html">Sign in</a></p>
+    </div>
+  </div>
+
+  <script src="register.js"></script>
+</body>
+</html>
