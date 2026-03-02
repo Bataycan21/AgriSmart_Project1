@@ -1,3 +1,5 @@
+document.addEventListener('DOMContentLoaded', function () {
+
 renderShell('tasks');
 
 const tasks = [
@@ -64,7 +66,9 @@ function renderTasks() {
   document.getElementById('filterSelect').value = filter;
 }
 
-function setFilter(val) { filter = val; renderTasks(); }
-function completeTask(id) { const t = tasks.find(t => t.id === id); if (t) { t.completed = true; renderTasks(); } }
+window.setFilter = function(val) { filter = val; renderTasks(); }
+window.completeTask = function(id) { const t = tasks.find(t => t.id === id); if (t) { t.completed = true; renderTasks(); } }
 
 renderTasks();
+
+}); // end DOMContentLoaded

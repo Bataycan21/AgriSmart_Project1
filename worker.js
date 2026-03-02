@@ -22,6 +22,8 @@ const NAV_ITEMS = [
 ];
 
 function renderShell(activeId) {
+     const currentUser = Auth.requireAuth(['worker', 'supervisor']);
+  if (!currentUser) return;
   const navHTML = NAV_ITEMS.map(item => `
     <a href="${item.href}" class="nav-item ${item.id === activeId ? 'active' : ''}">
       ${item.icon}
@@ -54,14 +56,37 @@ function renderShell(activeId) {
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
               <span class="badge"></span>
             </button>
-            <div class="user-profile">
-              <div class="user-avatar">
+            <div class="user-profile" onclick="toggleUserMenu()" style="cursor:pointer;position:relative;" id="userProfileBtn">
+            <div class="user-avatar">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-              </div>
-              <div class="user-info">
-                <div class="user-name">Juan Dela Cruz</div>
-                <div class="user-role">Worker</div>
-              </div>
+            </div>
+            <div class="user-info">
+                <div class="user-name">${currentUser.name}</div>
+                <div class="user-role">${currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1)}</div>
+            </div>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:4px;color:var(--muted);"><polyline points="6 9 12 15 18 9"/></svg>
+            <div id="userDropdown" style="display:none;position:absolute;top:calc(100% + 10px);right:0;background:white;border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,0.12);min-width:200px;z-index:999;overflow:hidden;">
+                <div style="padding:1rem;border-bottom:1px solid var(--border);">
+                <div style="font-size:0.85rem;font-weight:600;">${currentUser.name}</div>
+                <div style="font-size:0.72rem;color:var(--muted);">${currentUser.email}</div>
+                <span class="badge badge-green" style="margin-top:0.35rem;">${currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1)}</span>
+                </div>
+                <div style="padding:0.5rem;">
+                <a href="#" style="display:flex;align-items:center;gap:0.6rem;padding:0.6rem 0.75rem;border-radius:8px;text-decoration:none;color:var(--text);font-size:0.82rem;font-weight:500;transition:background 0.15s;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='transparent'">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    My Profile
+                </a>
+                <a href="#" style="display:flex;align-items:center;gap:0.6rem;padding:0.6rem 0.75rem;border-radius:8px;text-decoration:none;color:var(--text);font-size:0.82rem;font-weight:500;transition:background 0.15s;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='transparent'">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+                    Settings
+                </a>
+                <div style="border-top:1px solid var(--border);margin:0.4rem 0;"></div>
+                <a href="#" onclick="Auth.logout()" style="display:flex;align-items:center;gap:0.6rem;padding:0.6rem 0.75rem;border-radius:8px;text-decoration:none;color:#ef4444;font-size:0.82rem;font-weight:500;transition:background 0.15s;" onmouseover="this.style.background='#fff5f5'" onmouseout="this.style.background='transparent'">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                    Logout
+                </a>
+                </div>
+            </div>
             </div>
           </div>
         </header>
@@ -72,5 +97,17 @@ function renderShell(activeId) {
 
   document.getElementById('collapseBtn').addEventListener('click', () => {
     document.getElementById('sidebar').classList.toggle('collapsed');
+  });
+  // User dropdown toggle
+  document.addEventListener('click', function(e) {
+    const btn      = document.getElementById('userProfileBtn');
+    const dropdown = document.getElementById('userDropdown');
+    if (!btn || !dropdown) return;
+    if (btn.contains(e.target)) {
+      const isOpen = dropdown.style.display === 'block';
+      dropdown.style.display = isOpen ? 'none' : 'block';
+    } else {
+      dropdown.style.display = 'none';
+    }
   });
 }
