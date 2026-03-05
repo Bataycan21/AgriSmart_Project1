@@ -32,7 +32,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
   renderShell('elearning');
 
-  const GEMINI_API_KEY = 'AIzaSyCu9yXxVMPVYQL2a7e0vrQPyTwAI-fHGbc';
 
   // TODO: SUPABASE — replace this array with fetch from elearning_modules table
   let courses = [
@@ -106,7 +105,7 @@ document.addEventListener('DOMContentLoaded', function () {
   // ── GEMINI API ─────────────────────────────────────────────
   async function callGemini(prompt) {
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      '/api/gemini',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

@@ -1,7 +1,5 @@
 renderShell('elearning');
 
-// ── Gemini API Key ─────────────────────────────────────────
-const GEMINI_API_KEY = 'AIzaSyCu9yXxVMPVYQL2a7e0vrQPyTwAI-fHGbc';
 
 // ── Course Data ────────────────────────────────────────────
 // All start at 0% and 'not-started' — progress tracked live
@@ -73,7 +71,7 @@ function filterBtn(label) {
 // ── Gemini API call ────────────────────────────────────────
 async function callGemini(prompt) {
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+    '/api/gemini',
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

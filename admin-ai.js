@@ -44,7 +44,7 @@
 
 renderShell('ai');
 
-const GEMINI_API_KEY = 'AIzaSyCu9yXxVMPVYQL2a7e0vrQPyTwAI-fHGbc'; // ← replace this
+
 
 // ── STATE ────────────────────────────────────────────────────────
 let aiForm = { crop: '', land: '', season: '', soil: '', province: '' };
@@ -508,7 +508,7 @@ Return ONLY this exact JSON structure:
 }`;
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+    '/api/gemini',
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
