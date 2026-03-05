@@ -1,0 +1,22 @@
+{
+  "name": "agrismart_project1",
+  "version": "1.0.0",
+  "description": "",
+  "main": "admin-ai.js",
+  "scripts": {
+    "dev": "npx live-server",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Bataycan21/AgriSmart_Project1.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Bataycan21/AgriSmart_Project1/issues"
+  },
+  "homepage": "https://github.com/Bataycan21/AgriSmart_Project1#readme"
+}
