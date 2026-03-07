@@ -4,17 +4,35 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Extract prompt from Gemini-format request body
+    const prompt = req.body?.contents?.[0]?.parts?.[0]?.text || '';
+
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      'https://api.groq.com/openai/v1/chat/completions',
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(req.body),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 2048,
+          temperature: 0.7
+        })
       }
     );
+
     const data = await response.json();
-    return res.status(200).json(data);
+
+    // Convert Groq response → Gemini format (so frontend needs zero changes)
+    const text = data.choices?.[0]?.message?.content || '';
+    return res.status(200).json({
+      candidates: [{ content: { parts: [{ text }] } }]
+    });
+
   } catch (error) {
-    return res.status(500).json({ error: 'Gemini request failed' });
+    return res.status(500).json({ error: 'Groq request failed' });
   }
 }
