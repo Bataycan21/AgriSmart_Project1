@@ -32,23 +32,23 @@ function showError(msg) {
 }
 
 // ── Sign In ───────────────────────────────────────────────────
-document.getElementById('signInBtn').addEventListener('click', () => {
+document.getElementById('signInBtn').addEventListener('click', async () => {
   const email = document.getElementById('email').value.trim();
   const pw    = document.getElementById('password').value;
 
-  if (!email || !pw) {
-    showError('Please fill in all fields.');
-    return;
-  }
+  if (!email || !pw) { showError('Please fill in all fields.'); return; }
 
-  // ── Call Auth layer ────────────────────────────────────────
-  const result = Auth.login({ email, password: pw });
+  document.getElementById('signInBtn').textContent = 'Signing in...';
+  document.getElementById('signInBtn').disabled = true;
+
+  const result = await Auth.login({ email, password: pw });
 
   if (!result.success) {
     showError(result.error);
+    document.getElementById('signInBtn').textContent = 'Sign In';
+    document.getElementById('signInBtn').disabled = false;
     return;
   }
 
-  // ── Redirect by role ───────────────────────────────────────
   Auth.redirectByRole(result.user.role);
 });

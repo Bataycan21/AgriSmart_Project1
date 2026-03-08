@@ -52,7 +52,7 @@ function hideError() {
 }
 
 // ── Create Account ───────────────────────────────────────────
-document.getElementById('createBtn').addEventListener('click', () => {
+document.getElementById('createBtn').addEventListener('click', async () => {
   hideError();
 
   const name  = document.getElementById('fullname').value.trim();
@@ -70,15 +70,18 @@ document.getElementById('createBtn').addEventListener('click', () => {
 
   if (!v1 || !v2 || !v3 || !v4) return;
 
-  // ── Call Auth layer ────────────────────────────────────────
-  const result = Auth.register({ name, email, password: pw, role });
+  document.getElementById('createBtn').textContent = 'Creating account...';
+  document.getElementById('createBtn').disabled = true;
+
+  const result = await Auth.register({ name, email, password: pw, role });
 
   if (!result.success) {
     showError(result.error);
+    document.getElementById('createBtn').textContent = 'Create Account';
+    document.getElementById('createBtn').disabled = false;
     return;
   }
 
-  // Success — go to login
   alert(`Account created! Welcome, ${name}. Please sign in.`);
   window.location.href = 'login.html';
 });

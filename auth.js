@@ -1,121 +1,82 @@
-// ============================================================
-//  auth.js  –  AgriSmart Auth & Session Manager
-//  All "database" calls are clearly marked for Supabase swap.
-//  Search: [SUPABASE] to find every spot to replace.
-// ============================================================
+// auth.js — Supabase-powered, works with your existing login.js & register.js
 
-const Auth = (() => {
+const _supabase = window.supabase.createClient(
+  'https://wrmfnsyipdtihwlnrtou.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndybWZuc3lpcGR0aWh3bG5ydG91Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2OTI1MzksImV4cCI6MjA4ODI2ODUzOX0.1u2v9DJTYBBNCGT1cmlHw7IqwK9kp5TQMf0k1WWGlfw'
+);
 
-  const USERS_KEY   = 'agrismart_users';
-  const SESSION_KEY = 'agrismart_session';
+const Auth = {
 
-  // ── Local "database" (replace with Supabase) ──────────────
+  // Called by register.js: Auth.register({ name, email, password, role })
+  async register({ name, email, password, role }) {
+    try {
+      const { data, error } = await _supabase.auth.signUp({ email, password });
+      if (error) return { success: false, error: error.message };
 
-  function getUsers() {
-    // [SUPABASE] Remove this entire function
-    return JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
-  }
+      await _supabase.from('users').insert({
+        id: data.user.id, name, email, role, status: 'active'
+      });
 
-  function saveUsers(users) {
-    // [SUPABASE] Remove this entire function
-    localStorage.setItem(USERS_KEY, JSON.stringify(users));
-  }
+      if (role === 'worker') {
+        await _supabase.from('workers').insert({
+          user_id: data.user.id, name, email, status: 'active'
+        });
+      }
 
-  // ── Session ────────────────────────────────────────────────
-
-  function saveSession(user) {
-    // [SUPABASE] Not needed – Supabase handles sessions automatically
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(user));
-  }
-
-  function getSession() {
-    // [SUPABASE] Replace with:
-    //   const { data: { session } } = await supabase.auth.getSession()
-    //   return session?.user ?? null
-    const raw = sessionStorage.getItem(SESSION_KEY);
-    return raw ? JSON.parse(raw) : null;
-  }
-
-  function clearSession() {
-    // [SUPABASE] Replace with: await supabase.auth.signOut()
-    sessionStorage.removeItem(SESSION_KEY);
-  }
-
-  // ── Register ───────────────────────────────────────────────
-
-  function register({ name, email, password, role }) {
-    // [SUPABASE] Replace entire function body with:
-    //   const { data, error } = await supabase.auth.signUp({ email, password })
-    //   if (error) return { success: false, error: error.message }
-    //   await supabase.from('profiles').insert({ id: data.user.id, name, email, role })
-    //   return { success: true, user: { id: data.user.id, name, email, role } }
-
-    const users  = getUsers();
-    const exists = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-    if (exists) return { success: false, error: 'Email already registered.' };
-
-    const user = { id: Date.now(), name, email, password, role };
-    users.push(user);
-    saveUsers(users);
-    return { success: true, user: { id: user.id, name, email, role } };
-  }
-
-  // ── Login ──────────────────────────────────────────────────
-
-  function login({ email, password }) {
-    // [SUPABASE] Replace entire function body with:
-    //   const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-    //   if (error) return { success: false, error: 'Invalid email or password.' }
-    //   const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single()
-    //   const sessionUser = { id: data.user.id, name: profile.name, email: data.user.email, role: profile.role }
-    //   return { success: true, user: sessionUser }
-
-    const users = getUsers();
-    const found = users.find(
-      u => u.email.toLowerCase() === email.toLowerCase() && u.password === password
-    );
-    if (!found) return { success: false, error: 'Invalid email or password.' };
-
-    const sessionUser = { id: found.id, name: found.name, email: found.email, role: found.role };
-    saveSession(sessionUser);
-    return { success: true, user: sessionUser };
-  }
-
-  // ── Logout ─────────────────────────────────────────────────
-
-  function logout() {
-    // [SUPABASE] Replace with: await supabase.auth.signOut()
-    clearSession();
-    window.location.href = 'login.html';
-  }
-
-  // ── Route guard ────────────────────────────────────────────
-  // Call requireAuth() at the top of every protected page JS file.
-
-  function requireAuth(allowedRoles) {
-    // [SUPABASE] Replace getSession() with supabase session check
-    const user = getSession();
-    if (!user) {
-      window.location.href = 'login.html';
-      return null;
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message || 'Registration failed.' };
     }
-    if (allowedRoles && !allowedRoles.includes(user.role)) {
-      redirectByRole(user.role);
-      return null;
+  },
+
+  // Called by login.js: Auth.login({ email, password })
+  async login({ email, password }) {
+    try {
+      const { data, error } = await _supabase.auth.signInWithPassword({ email, password });
+      if (error) return { success: false, error: error.message };
+
+      const { data: profile } = await _supabase
+        .from('users').select('*').eq('email', email).single();
+
+      const user = {
+        id:    profile?.id    || data.user.id,
+        name:  profile?.name  || email,
+        email: email,
+        role:  profile?.role  || 'worker',
+      };
+
+      localStorage.setItem('agrismart_session', JSON.stringify(user));
+      return { success: true, user };
+    } catch (err) {
+      return { success: false, error: err.message || 'Login failed.' };
     }
-    return user;
-  }
+  },
 
-  // ── Role redirect ──────────────────────────────────────────
-
-  function redirectByRole(role) {
+  // Called by login.js: Auth.redirectByRole(role)
+  redirectByRole(role) {
     if (role === 'admin' || role === 'supervisor') {
       window.location.href = 'admin-dashboard.html';
     } else {
       window.location.href = 'worker-dashboard.html';
     }
-  }
+  },
 
-  return { register, login, logout, getSession, requireAuth, redirectByRole };
+  getSession() {
+    const raw = localStorage.getItem('agrismart_session');
+    return raw ? JSON.parse(raw) : null;
+  },
 
-})();
+  requireAuth() {
+    const session = this.getSession();
+    if (!session) { window.location.href = 'login.html'; return null; }
+    return session;
+  },
+
+  async logout() {
+    await _supabase.auth.signOut();
+    localStorage.removeItem('agrismart_session');
+    window.location.href = 'login.html';
+  },
+};
+
+window.Auth = Auth;
