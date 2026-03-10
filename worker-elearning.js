@@ -1,63 +1,81 @@
+// worker-elearning.js  —  AgriSmart Worker E-Learning (Supabase-connected)
+// Fetches only enabled=true modules from elearning_modules table.
+// Admin hide/show/add actions are instantly reflected here on next page load.
+
 document.addEventListener('DOMContentLoaded', async function () {
 
   renderShell('elearning');
 
   const session = Auth.getSession();
 
-  // ── Course Data ────────────────────────────────────────────
-  const courses = [
-    { id:1, tag:'Soil Science',     tagColor:'#2D5A27', accent:'#2D5A27', title:'Soil Health Assessment Fundamentals',  desc:'Learn how to assess soil quality, understand pH levels, and optimize soil conditions for different crops.',       hours:'2 hours',   modules:'6 modules' },
-    { id:2, tag:'Farming Methods',  tagColor:'#f59e0b', accent:'#f59e0b', title:'Organic Farming Techniques',            desc:'Master organic farming methods including composting, natural pest control, and crop rotation strategies.',         hours:'3 hours',   modules:'8 modules' },
-    { id:3, tag:'Water Management', tagColor:'#3b82f6', accent:'#3b82f6', title:'Irrigation Systems & Water Management', desc:'Understand different irrigation methods, water conservation techniques, and smart irrigation scheduling.',        hours:'2.5 hours', modules:'7 modules' },
-    { id:4, tag:'Crop Protection',  tagColor:'#ef4444', accent:'#ef4444', title:'Pest & Disease Identification',          desc:'Identify common crop pests and diseases. Learn prevention and treatment strategies for healthy crops.',            hours:'2 hours',   modules:'5 modules' },
-    { id:5, tag:'Sustainability',   tagColor:'#22c55e', accent:'#22c55e', title:'Sustainable Agriculture Practices',     desc:'Explore sustainable farming practices aligned with SDG 2 and SDG 12 for responsible production.',                  hours:'4 hours',   modules:'10 modules'},
-    { id:6, tag:'Safety',           tagColor:'#f59e0b', accent:'#f59e0b', title:'Farm Equipment Safety & Maintenance',   desc:'Safety protocols for operating farm equipment and routine maintenance procedures to prevent accidents.',         hours:'1.5 hours', modules:'4 modules' },
-  ];
+  // ── LOAD MODULES FROM SUPABASE ─────────────────────────────
+  // RLS ensures workers only receive rows where enabled = true
+  let courses = [];
 
-  // ── Progress tracker — loaded from Supabase ────────────────
-  const courseProgress = { 1:0, 2:0, 3:0, 4:0, 5:0, 6:0 };
+  async function loadModules() {
+    const { data, error } = await window.db
+      .from('elearning_modules')
+      .select('id, tag, tag_color, accent, title, description, hours, modules')
+      .order('id');
+
+    if (error) {
+      console.error('[Worker eLearning] loadModules:', error.message);
+      return;
+    }
+
+    courses = (data || []).map(row => ({
+      id:       row.id,
+      tag:      row.tag,
+      tagColor: row.tag_color,
+      accent:   row.accent,
+      title:    row.title,
+      desc:     row.description,
+      hours:    row.hours,
+      modules:  row.modules,
+    }));
+  }
+
+  // ── PROGRESS ───────────────────────────────────────────────
+  const courseProgress = {};
 
   async function loadProgress() {
     const { data, error } = await window.db
       .from('elearning_progress')
       .select('module_id, progress')
       .eq('worker_id', session.worker_id);
-    if (error) { console.error('[eLearning] load progress:', error.message); return; }
-    (data || []).forEach(row => {
-      if (courseProgress.hasOwnProperty(row.module_id)) {
-        courseProgress[row.module_id] = row.progress;
-      }
-    });
+
+    if (error) { console.error('[Worker eLearning] loadProgress:', error.message); return; }
+    (data || []).forEach(row => { courseProgress[row.module_id] = row.progress; });
   }
 
   async function saveProgress(courseId, pct) {
     const { error } = await window.db
       .from('elearning_progress')
       .upsert({
-        worker_id: session.worker_id,
-        module_id: courseId,
-        progress:  pct,
-        completed: pct >= 100,
+        worker_id:  session.worker_id,
+        module_id:  courseId,
+        progress:   pct,
+        completed:  pct >= 100,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'worker_id,module_id' });
-    if (error) console.error('[eLearning] save progress:', error.message);
+
+    if (error) console.error('[Worker eLearning] saveProgress:', error.message);
   }
 
-  // ── State ──────────────────────────────────────────────────
+  // ── STATE ──────────────────────────────────────────────────
   let elFilter       = 'All';
   let activeModule   = null;
   let generatedCache = {};
 
   function getStatus(id) {
-    const p = courseProgress[id];
+    const p = courseProgress[id] || 0;
     if (p >= 100) return 'completed';
     if (p > 0)    return 'in-progress';
     return 'not-started';
   }
 
   function updateProgress(courseId, currentSlide, totalSlides) {
-    const totalSteps = totalSlides + 1;
-    const p = Math.min(Math.round(((currentSlide + 1) / totalSteps) * 100), 99);
+    const p = Math.min(Math.round(((currentSlide + 1) / (totalSlides + 1)) * 100), 99);
     courseProgress[courseId] = p;
     saveProgress(courseId, p);
     updateCardProgress(courseId);
@@ -70,18 +88,16 @@ document.addEventListener('DOMContentLoaded', async function () {
   }
 
   function updateCardProgress(courseId) {
-    const p      = courseProgress[courseId];
+    const p      = courseProgress[courseId] || 0;
     const status = getStatus(courseId);
     const bar    = document.getElementById(`bar-${courseId}`);
     const pct    = document.getElementById(`pct-${courseId}`);
     const badge  = document.getElementById(`badge-${courseId}`);
     if (bar)   bar.style.width   = `${p}%`;
     if (pct)   pct.textContent   = `${p}%`;
-    if (badge) {
-      badge.innerHTML = status === 'completed'
-        ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`
-        : '';
-    }
+    if (badge) badge.innerHTML   = status === 'completed'
+      ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`
+      : '';
   }
 
   function filterBtn(label) {
@@ -89,10 +105,10 @@ document.addEventListener('DOMContentLoaded', async function () {
     return `<button onclick="elSetFilter('${label}')" style="padding:0.4rem 1rem;border-radius:8px;font-family:'Poppins',sans-serif;font-size:0.8rem;font-weight:${a?'600':'500'};cursor:pointer;border:1.5px solid ${a?'var(--green-dark)':'var(--border)'};background:${a?'var(--green-dark)':'white'};color:${a?'white':'var(--muted)'};transition:all 0.2s;">${label}</button>`;
   }
 
-  // ── Gemini API ─────────────────────────────────────────────
+  // ── GEMINI API ─────────────────────────────────────────────
   async function callGemini(prompt) {
     const res = await fetch('/api/gemini', {
-      method: 'POST',
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
@@ -101,7 +117,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     });
     const data = await res.json();
     if (data.error) throw new Error(`Gemini error: ${data.error.message}`);
-    if (!data.candidates || !data.candidates[0]) throw new Error('No response from Gemini');
+    if (!data.candidates?.[0]) throw new Error('No response from Gemini');
     return data.candidates[0].content.parts[0].text;
   }
 
@@ -134,72 +150,55 @@ document.addEventListener('DOMContentLoaded', async function () {
 
   async function generateModule(course) {
     if (generatedCache[course.id]) return generatedCache[course.id];
-    const prompt = `You are an expert agricultural trainer for farm workers in the Philippines.\n\nCreate a 5-slide training module for this course:\nCourse Title: "${course.title}"\nCourse Topic: "${course.desc}"\n\nReply using EXACTLY this format, line by line. Do not add any extra text, greetings, or explanation outside of these lines:\n\nSLIDE 1 TITLE: (write the slide title here)\nSLIDE 1 CONTENT: (write 2-3 sentences of practical lesson content for Filipino farm workers in simple English)\nSLIDE 1 POINTS: (point 1) | (point 2) | (point 3)\n\nSLIDE 2 TITLE: (write the slide title here)\nSLIDE 2 CONTENT: (write 2-3 sentences of practical lesson content)\nSLIDE 2 POINTS: (point 1) | (point 2) | (point 3)\n\nSLIDE 3 TITLE: (write the slide title here)\nSLIDE 3 CONTENT: (write 2-3 sentences of practical lesson content)\nSLIDE 3 POINTS: (point 1) | (point 2) | (point 3)\n\nSLIDE 4 TITLE: (write the slide title here)\nSLIDE 4 CONTENT: (write 2-3 sentences of practical lesson content)\nSLIDE 4 POINTS: (point 1) | (point 2) | (point 3)\n\nSLIDE 5 TITLE: (write the slide title here)\nSLIDE 5 CONTENT: (write 2-3 sentences of practical lesson content)\nSLIDE 5 POINTS: (point 1) | (point 2) | (point 3)\n\nSUMMARY OVERVIEW: (write 2 sentences summarizing the whole course)\nSUMMARY TAKEAWAYS: (takeaway 1) | (takeaway 2) | (takeaway 3) | (takeaway 4) | (takeaway 5)`;
+    const prompt = `You are an expert agricultural trainer for farm workers in the Philippines.
+
+Create a 5-slide training module for this course:
+Course Title: "${course.title}"
+Course Topic: "${course.desc}"
+
+Reply using EXACTLY this format, line by line. Do not add any extra text, greetings, or explanation outside of these lines:
+
+SLIDE 1 TITLE: (write the slide title here)
+SLIDE 1 CONTENT: (write 2-3 sentences of practical lesson content for Filipino farm workers in simple English)
+SLIDE 1 POINTS: (point 1) | (point 2) | (point 3)
+
+SLIDE 2 TITLE: (write the slide title here)
+SLIDE 2 CONTENT: (write 2-3 sentences of practical lesson content)
+SLIDE 2 POINTS: (point 1) | (point 2) | (point 3)
+
+SLIDE 3 TITLE: (write the slide title here)
+SLIDE 3 CONTENT: (write 2-3 sentences of practical lesson content)
+SLIDE 3 POINTS: (point 1) | (point 2) | (point 3)
+
+SLIDE 4 TITLE: (write the slide title here)
+SLIDE 4 CONTENT: (write 2-3 sentences of practical lesson content)
+SLIDE 4 POINTS: (point 1) | (point 2) | (point 3)
+
+SLIDE 5 TITLE: (write the slide title here)
+SLIDE 5 CONTENT: (write 2-3 sentences of practical lesson content)
+SLIDE 5 POINTS: (point 1) | (point 2) | (point 3)
+
+SUMMARY OVERVIEW: (write 2 sentences summarizing the whole course)
+SUMMARY TAKEAWAYS: (takeaway 1) | (takeaway 2) | (takeaway 3) | (takeaway 4) | (takeaway 5)`;
+
     const raw    = await callGemini(prompt);
     const parsed = parseGeminiResponse(raw);
     generatedCache[course.id] = parsed;
     return parsed;
   }
 
-  // ── Navigation ─────────────────────────────────────────────
-  window.elOpenModule = async (courseId) => {
-    const course = courses.find(c => c.id === courseId);
-    activeModule = { course, slides: [], currentSlide: 0, loading: true, error: null, summary: null, showSummary: false };
-    renderElearning();
-    try {
-      const data           = await generateModule(course);
-      activeModule.slides  = data.slides;
-      activeModule.summary = data.summary;
-      activeModule.loading = false;
-      updateProgress(courseId, 0, data.slides.length);
-      renderElearning();
-    } catch (err) {
-      activeModule.loading = false;
-      activeModule.error   = err.message || 'Failed to load module. Please try again.';
-      renderElearning();
-    }
-  };
-
-  window.elCloseModule = () => { activeModule = null; renderElearning(); };
-  window.elSetFilter   = f  => { elFilter = f; renderElearning(); };
-
-  window.elNextSlide = () => {
-    if (activeModule.showSummary) return;
-    if (activeModule.currentSlide < activeModule.slides.length - 1) {
-      activeModule.currentSlide++;
-      updateProgress(activeModule.course.id, activeModule.currentSlide, activeModule.slides.length);
-    } else {
-      activeModule.showSummary = true;
-      markComplete(activeModule.course.id);
-    }
-    renderElearning();
-  };
-
-  window.elPrevSlide = () => {
-    if (activeModule.showSummary) {
-      activeModule.showSummary = false;
-    } else if (activeModule.currentSlide > 0) {
-      activeModule.currentSlide--;
-      updateProgress(activeModule.course.id, activeModule.currentSlide, activeModule.slides.length);
-    }
-    renderElearning();
-  };
-
-  window.elRetry = async (courseId) => {
-    delete generatedCache[courseId];
-    await elOpenModule(courseId);
-  };
-
-  // ── Module overlay (unchanged from original) ───────────────
+  // ── MODULE OVERLAY ─────────────────────────────────────────
   function renderModuleOverlay() {
     const { course, slides, currentSlide, loading, error, summary, showSummary } = activeModule;
     const total    = slides.length;
     const isFirst  = currentSlide === 0 && !showSummary;
+    const isLast   = currentSlide === slides.length - 1;
     const progress = showSummary ? 100 : total > 0 ? Math.round(((currentSlide + 1) / (total + 1)) * 100) : 0;
 
     return `
       <div style="position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:1000;display:flex;align-items:center;justify-content:center;padding:1rem;" onclick="elCloseModule()">
         <div style="background:white;border-radius:20px;width:100%;max-width:760px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,0.2);overflow:hidden;" onclick="event.stopPropagation()">
+
           <div style="background:${course.accent};padding:1.25rem 1.5rem;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
             <div style="display:flex;align-items:center;gap:0.75rem;">
               <div style="width:36px;height:36px;background:rgba(255,255,255,0.2);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
@@ -214,9 +213,11 @@ document.addEventListener('DOMContentLoaded', async function () {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
+
           <div style="height:4px;background:#f3f4f6;flex-shrink:0;">
             <div style="height:100%;background:${course.accent};width:${progress}%;transition:width 0.4s ease;"></div>
           </div>
+
           <div style="flex:1;overflow-y:auto;padding:1.75rem;">
             ${loading ? `
               <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3rem;text-align:center;">
@@ -281,11 +282,11 @@ document.addEventListener('DOMContentLoaded', async function () {
               `;
             })()}
           </div>
+
           ${!loading && !error ? `
             <div style="padding:1rem 1.5rem;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;background:#fafafa;">
-              <button onclick="elPrevSlide()" class="btn btn-ghost" style="${isFirst ? 'opacity:0.35;pointer-events:none;' : ''}" ${isFirst ? 'disabled' : ''}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-                Previous
+              <button onclick="elPrevSlide()" class="btn btn-ghost" style="${isFirst?'opacity:0.35;pointer-events:none;':''}" ${isFirst?'disabled':''}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Previous
               </button>
               <div style="display:flex;gap:6px;align-items:center;">
                 ${slides.map((_, i) => `<div style="width:8px;height:8px;border-radius:50%;background:${i === currentSlide && !showSummary ? course.accent : '#e5e7eb'};transition:background 0.2s;"></div>`).join('')}
@@ -296,21 +297,23 @@ document.addEventListener('DOMContentLoaded', async function () {
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                     Finish</button>`
                 : `<button onclick="elNextSlide()" class="btn btn-primary" style="background:${course.accent};">
-                    ${activeModule.currentSlide === slides.length - 1 ? 'Finish' : 'Next'}
+                    ${isLast ? 'Finish' : 'Next'}
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
                   </button>`}
             </div>
           ` : ''}
+
         </div>
       </div>
     `;
   }
 
-  // ── Main render ────────────────────────────────────────────
+  // ── MAIN RENDER ────────────────────────────────────────────
   function renderElearning() {
-    const vis = elFilter === 'All' ? courses
-      : elFilter === 'In Progress' ? courses.filter(c => getStatus(c.id) === 'in-progress')
-      : courses.filter(c => getStatus(c.id) === elFilter.toLowerCase().replace(' ','-'));
+    const vis = elFilter === 'All'         ? courses
+      : elFilter === 'In Progress'         ? courses.filter(c => getStatus(c.id) === 'in-progress')
+      : elFilter === 'completed'           ? courses.filter(c => getStatus(c.id) === 'completed')
+      : courses.filter(c => getStatus(c.id) === 'not-started');
 
     document.getElementById('pageContent').innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.2rem;">
@@ -321,50 +324,112 @@ document.addEventListener('DOMContentLoaded', async function () {
       </div>
       <p class="page-subtitle" style="margin-bottom:1.5rem;">AI-powered training modules for farm workers</p>
 
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;">
-        ${vis.map(c => {
-          const p      = courseProgress[c.id];
-          const status = getStatus(c.id);
-          return `
-          <div class="card" style="padding:0;overflow:hidden;display:flex;flex-direction:column;">
-            <div style="height:5px;background:${c.accent};"></div>
-            <div style="padding:1.25rem;flex:1;display:flex;flex-direction:column;">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;">
-                <span style="font-size:0.7rem;font-weight:600;color:${c.tagColor};">${c.tag}</span>
-                <span id="badge-${c.id}">
-                  ${status === 'completed' ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>` : ''}
-                </span>
-              </div>
-              <h3 style="font-size:0.88rem;font-weight:700;margin-bottom:0.5rem;line-height:1.3;">${c.title}</h3>
-              <p style="font-size:0.75rem;color:var(--muted);line-height:1.5;margin-bottom:0.75rem;flex:1;">${c.desc}</p>
-              <div style="display:flex;gap:1rem;font-size:0.72rem;color:var(--muted);margin-bottom:0.75rem;">
-                <span>${c.hours}</span>
-                <span>${c.modules}</span>
-                <span style="color:#2D5A27;font-weight:600;">⚡ AI</span>
-              </div>
-              <div class="progress-wrap" style="margin-bottom:0.85rem;">
-                <div class="progress-label">
-                  <span>Progress</span>
-                  <span id="pct-${c.id}">${p}%</span>
+      ${courses.length === 0 ? `
+        <div style="text-align:center;padding:4rem 2rem;color:var(--muted);">
+          <svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" style="margin:0 auto 1rem;display:block;"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+          <div style="font-size:.95rem;font-weight:600;margin-bottom:.4rem;">No modules available</div>
+          <div style="font-size:.82rem;">Your admin hasn't enabled any training modules yet.</div>
+        </div>
+      ` : `
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;">
+          ${vis.map(c => {
+            const p      = courseProgress[c.id] || 0;
+            const status = getStatus(c.id);
+            return `
+            <div class="card" style="padding:0;overflow:hidden;display:flex;flex-direction:column;">
+              <div style="height:5px;background:${c.accent};"></div>
+              <div style="padding:1.25rem;flex:1;display:flex;flex-direction:column;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;">
+                  <span style="font-size:0.7rem;font-weight:600;color:${c.tagColor};">${c.tag}</span>
+                  <span id="badge-${c.id}">
+                    ${status === 'completed' ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>` : ''}
+                  </span>
                 </div>
-                <div class="progress-bar">
-                  <div id="bar-${c.id}" class="progress-fill" style="width:${p}%;background:${c.accent};transition:width 0.4s ease;"></div>
+                <h3 style="font-size:0.88rem;font-weight:700;margin-bottom:0.5rem;line-height:1.3;">${c.title}</h3>
+                <p style="font-size:0.75rem;color:var(--muted);line-height:1.5;margin-bottom:0.75rem;flex:1;">${c.desc}</p>
+                <div style="display:flex;gap:1rem;font-size:0.72rem;color:var(--muted);margin-bottom:0.75rem;">
+                  <span>${c.hours}</span>
+                  <span>${c.modules}</span>
+                  <span style="color:#2D5A27;font-weight:600;">⚡ AI</span>
                 </div>
+                <div class="progress-wrap" style="margin-bottom:0.85rem;">
+                  <div class="progress-label">
+                    <span>Progress</span>
+                    <span id="pct-${c.id}">${p}%</span>
+                  </div>
+                  <div class="progress-bar">
+                    <div id="bar-${c.id}" class="progress-fill" style="width:${p}%;background:${c.accent};transition:width 0.4s ease;"></div>
+                  </div>
+                </div>
+                <button class="btn ${status === 'completed' ? 'btn-ghost' : status === 'in-progress' ? 'btn-primary' : 'btn-outline'}"
+                  style="width:100%;justify-content:center;${status === 'in-progress' ? `background:${c.accent};` : ''}"
+                  onclick="elOpenModule(${c.id})">
+                  ${status === 'completed' ? 'Review Course &nbsp;›' : status === 'in-progress' ? 'Continue &nbsp;▷' : 'Start Course &nbsp;▷'}
+                </button>
               </div>
-              <button class="btn ${status === 'completed' ? 'btn-ghost' : status === 'in-progress' ? 'btn-primary' : 'btn-outline'}"
-                style="width:100%;justify-content:center;${status === 'in-progress' ? `background:${c.accent};` : ''}"
-                onclick="elOpenModule(${c.id})">
-                ${status === 'completed' ? 'Review Course &nbsp;›' : status === 'in-progress' ? 'Continue &nbsp;▷' : 'Start Course &nbsp;▷'}
-              </button>
-            </div>
-          </div>`;
-        }).join('')}
-      </div>
+            </div>`;
+          }).join('')}
+        </div>
+      `}
 
       ${activeModule ? renderModuleOverlay() : ''}
     `;
   }
 
+  // ── NAVIGATION ─────────────────────────────────────────────
+  window.elOpenModule = async (courseId) => {
+    const course = courses.find(c => c.id === courseId);
+    if (!course) return;
+    activeModule = { course, slides: [], currentSlide: 0, loading: true, error: null, summary: null, showSummary: false };
+    renderElearning();
+    try {
+      const data           = await generateModule(course);
+      activeModule.slides  = data.slides;
+      activeModule.summary = data.summary;
+      activeModule.loading = false;
+      updateProgress(courseId, 0, data.slides.length);
+      renderElearning();
+    } catch (err) {
+      activeModule.loading = false;
+      activeModule.error   = err.message || 'Failed to load module. Please try again.';
+      renderElearning();
+    }
+  };
+
+  window.elCloseModule = () => { activeModule = null; renderElearning(); };
+  window.elSetFilter   = f  => { elFilter = f; renderElearning(); };
+
+  window.elNextSlide = () => {
+    if (!activeModule || activeModule.showSummary) return;
+    if (activeModule.currentSlide < activeModule.slides.length - 1) {
+      activeModule.currentSlide++;
+      updateProgress(activeModule.course.id, activeModule.currentSlide, activeModule.slides.length);
+    } else {
+      activeModule.showSummary = true;
+      markComplete(activeModule.course.id);
+    }
+    renderElearning();
+  };
+
+  window.elPrevSlide = () => {
+    if (!activeModule) return;
+    if (activeModule.showSummary) {
+      activeModule.showSummary = false;
+    } else if (activeModule.currentSlide > 0) {
+      activeModule.currentSlide--;
+      updateProgress(activeModule.course.id, activeModule.currentSlide, activeModule.slides.length);
+    }
+    renderElearning();
+  };
+
+  window.elRetry = async (courseId) => {
+    delete generatedCache[courseId];
+    await elOpenModule(courseId);
+  };
+
+  // ── INIT ───────────────────────────────────────────────────
+  await loadModules();
   await loadProgress();
   renderElearning();
+
 });
