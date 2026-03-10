@@ -1,185 +1,60 @@
-// ============================================================
-// SUPABASE SETUP INSTRUCTIONS FOR GITHUB COPILOT
-// ============================================================
-// TABLE: crm_contacts
-// - id          (int8, primary key, auto increment)
-// - name        (text)
-// - company     (text)
-// - type        (text) — 'Buyer' | 'Supplier' | 'Partner'
-// - email       (text)
-// - phone       (text)
-// - location    (text)
-// - description (text)
-// - stars       (int4, default 3)
-// - last        (text)
-// - enabled     (bool, default true)
-// - created_at  (timestamptz, default now())
-//
-// TABLE: crm_history
-// - id          (int8, primary key, auto increment)
-// - date        (text)
-// - contact     (text)
-// - company     (text)
-// - action      (text) — 'Added' | 'Edited' | 'Disabled' | 'Enabled' | 'Deleted'
-// - by          (text)
-// - notes       (text)
-// - created_at  (timestamptz, default now())
-//
-// TODO: SUPABASE — fetch contacts: supabase.from('crm_contacts').select('*').order('id')
-// TODO: SUPABASE — fetch history:  supabase.from('crm_history').select('*').order('created_at',{ascending:false})
-// TODO: SUPABASE — on add:    supabase.from('crm_contacts').insert({...})
-// TODO: SUPABASE — on edit:   supabase.from('crm_contacts').update({...}).eq('id', id)
-// TODO: SUPABASE — on toggle: supabase.from('crm_contacts').update({ enabled }).eq('id', id)
-// TODO: SUPABASE — on delete: supabase.from('crm_contacts').delete().eq('id', id)
-// TODO: SUPABASE — on any action, also insert into crm_history
-// RLS: admin/supervisor = ALL | no worker access needed
-// ============================================================
-
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener('DOMContentLoaded', async function () {
 
   renderShell('crm');
 
-  // TODO: SUPABASE — replace with fetch from crm_contacts table
-  let crmContacts = [
-    { id:1, name:'Roberto Cruz',     company:'Fresh Market Co.',      type:'Buyer',    email:'roberto@freshmarket.ph',  phone:'+63 918 123 4567', location:'Manila',      description:'Primary vegetable buyer. Purchases bulk produce every week for distribution across Metro Manila wet markets.',       stars:5, last:'Feb 18, 2026', enabled:true  },
-    { id:2, name:'Elena Villanueva', company:'AgroSupply Inc.',        type:'Supplier', email:'elena@agrosupply.ph',     phone:'+63 917 234 5678', location:'Pampanga',    description:'Fertilizer and pesticide supplier. Provides NPK, urea, and organic pesticide solutions at competitive wholesale pricing.', stars:4, last:'Feb 15, 2026', enabled:true  },
-    { id:3, name:'Miguel Santos',    company:'FarmTech Solutions',     type:'Partner',  email:'miguel@farmtech.ph',      phone:'+63 916 345 6789', location:'Laguna',      description:'Technology partner for smart irrigation systems. Provides IoT soil sensors and drip irrigation equipment installation.',   stars:5, last:'Feb 19, 2026', enabled:true  },
-    { id:4, name:'Sofia Reyes',      company:'Green Harvest Corp.',    type:'Buyer',    email:'sofia@greenharv.ph',      phone:'+63 915 456 7890', location:'Batangas',    description:'Fruit and vegetable buyer focused on export-grade produce. Requires strict quality control and packaging standards.',       stars:2, last:'Feb 10, 2026', enabled:true  },
-    { id:5, name:'Antonio Mendoza',  company:'SeedMaster PH',          type:'Supplier', email:'antonio@seedmaster.ph',   phone:'+63 919 567 8901', location:'Nueva Ecija', description:'Certified seed supplier for rice, corn, and vegetable varieties. Offers hybrid and open-pollinated seed varieties.',        stars:4, last:'Feb 12, 2026', enabled:true  },
-    { id:6, name:'Carmen De Leon',   company:'Organic Farms Network',  type:'Partner',  email:'carmen@orgfarms.ph',      phone:'+63 918 678 9012', location:'Benguet',     description:'Organic certification and training partner. Assists in transitioning conventional farms to certified organic operations.',   stars:5, last:'Feb 20, 2026', enabled:false },
-  ];
+  const session = Auth.getSession();
 
-  // TODO: SUPABASE — replace with fetch from crm_history table
-  let crmHistory = [
-    { id:1, date:'Feb 20, 2026', contact:'Carmen De Leon',   company:'Organic Farms Network', action:'Added',    by:'Admin', notes:'New partner contact added.' },
-    { id:2, date:'Feb 19, 2026', contact:'Miguel Santos',    company:'FarmTech Solutions',    action:'Edited',   by:'Admin', notes:'Updated phone number and description.' },
-    { id:3, date:'Feb 18, 2026', contact:'Roberto Cruz',     company:'Fresh Market Co.',      action:'Edited',   by:'Admin', notes:'Raised star rating to 5.' },
-    { id:4, date:'Feb 15, 2026', contact:'Elena Villanueva', company:'AgroSupply Inc.',       action:'Added',    by:'Admin', notes:'Supplier contact created.' },
-    { id:5, date:'Feb 10, 2026', contact:'Sofia Reyes',      company:'Green Harvest Corp.',   action:'Disabled', by:'Admin', notes:'Temporarily disabled pending quality review.' },
-  ];
+  let crmContacts = [];
+  let crmHistory  = [];
 
   let crmSearch   = '', crmType = 'All Types';
-  let activeTab   = 'contacts';  // 'contacts' | 'manage' | 'history'
-  let crmModal    = false;       // false | 'add' | 'edit'
+  let activeTab   = 'contacts';
+  let crmModal    = false;
   let editContact = null;
   let histSearch  = '';
-  let nextId      = 7;
-  let histNextId  = 6;
 
   const typeColor = { Buyer:'badge-blue', Supplier:'badge-orange', Partner:'badge-green' };
-  const initials  = n => n.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
-  const starsHTML = n => Array.from({length:5},(_,i)=>`<svg width="13" height="13" viewBox="0 0 24 24" fill="${i<n?'#f59e0b':'none'}" stroke="#f59e0b" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`).join('');
+  const initials  = n => n.split(' ').map(x => x[0]).join('').slice(0, 2).toUpperCase();
+  const starsHTML = n => Array.from({length:5}, (_, i) =>
+    `<svg width="13" height="13" viewBox="0 0 24 24" fill="${i < n ? '#f59e0b' : 'none'}" stroke="#f59e0b" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`
+  ).join('');
 
   function actionBadgeStyle(a) {
     const map = {
-      Added:    'background:#dcfce7;color:#166534;',
-      Edited:   'background:#dbeafe;color:#1e40af;',
-      Enabled:  'background:#dcfce7;color:#166534;',
-      Disabled: 'background:#fee2e2;color:#991b1b;',
-      Deleted:  'background:#fee2e2;color:#991b1b;',
+      Added:'background:#dcfce7;color:#166534;', Edited:'background:#dbeafe;color:#1e40af;',
+      Enabled:'background:#dcfce7;color:#166534;', Disabled:'background:#fee2e2;color:#991b1b;',
+      Deleted:'background:#fee2e2;color:#991b1b;',
     };
     return map[a] || 'background:#f3f4f6;color:#374151;';
   }
 
-  function logHistory(contact, action, notes='') {
-    // TODO: SUPABASE — replace with:
-    // await supabase.from('crm_history').insert({ date: today, contact: contact.name, company: contact.company, action, by: Auth.getSession()?.name || 'Admin', notes })
-    const today = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-    crmHistory.unshift({ id: histNextId++, date: today, contact: contact.name, company: contact.company, action, by: 'Admin', notes });
+  // ── Loaders ────────────────────────────────────────────────
+  async function loadContacts() {
+    const { data, error } = await window.db
+      .from('crm_contacts').select('*').order('id');
+    if (error) { console.error('[CRM] contacts:', error.message); return; }
+    crmContacts = data || [];
   }
 
-  // ── MODAL HTML ─────────────────────────────────────────────
-  function modalHTML() {
-    const isEdit = crmModal === 'edit' && editContact;
-    const c      = isEdit ? editContact : {};
-    return `
-      <div style="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:999;display:flex;align-items:center;justify-content:center;padding:1rem;" onclick="CRM.closeModal()">
-        <div style="background:white;border-radius:16px;padding:1.75rem 2rem;width:100%;max-width:500px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.15);animation:modalIn .2s ease;" onclick="event.stopPropagation()">
-
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;">
-            <h2 style="font-size:1.05rem;font-weight:700;">${isEdit ? 'Edit Contact' : 'Add New Contact'}</h2>
-            <button onclick="CRM.closeModal()" style="background:none;border:none;cursor:pointer;color:var(--muted);">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-          </div>
-
-          <div style="display:flex;flex-direction:column;gap:.9rem;">
-
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;">
-              <div>
-                <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:.3rem;">Full Name <span style="color:var(--red);">*</span></label>
-                <input id="cm_name" type="text" value="${c.name||''}" placeholder="e.g. Roberto Cruz"
-                  style="width:100%;padding:.55rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-family:'Poppins',sans-serif;font-size:.82rem;outline:none;box-sizing:border-box;"/>
-                <div id="cm_name_err" style="color:var(--red);font-size:.7rem;margin-top:2px;display:none;">Required.</div>
-              </div>
-              <div>
-                <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:.3rem;">Company <span style="color:var(--red);">*</span></label>
-                <input id="cm_company" type="text" value="${c.company||''}" placeholder="e.g. Fresh Market Co."
-                  style="width:100%;padding:.55rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-family:'Poppins',sans-serif;font-size:.82rem;outline:none;box-sizing:border-box;"/>
-                <div id="cm_company_err" style="color:var(--red);font-size:.7rem;margin-top:2px;display:none;">Required.</div>
-              </div>
-            </div>
-
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;">
-              <div>
-                <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:.3rem;">Type</label>
-                <div style="position:relative;">
-                  <select id="cm_type" style="width:100%;padding:.55rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-family:'Poppins',sans-serif;font-size:.82rem;outline:none;appearance:none;cursor:pointer;">
-                    ${['Buyer','Supplier','Partner'].map(t=>`<option ${c.type===t?'selected':''}>${t}</option>`).join('')}
-                  </select>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" style="position:absolute;right:9px;top:50%;transform:translateY(-50%);pointer-events:none;"><polyline points="6 9 12 15 18 9"/></svg>
-                </div>
-              </div>
-              <div>
-                <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:.3rem;">Location</label>
-                <input id="cm_loc" type="text" value="${c.location||''}" placeholder="e.g. Manila"
-                  style="width:100%;padding:.55rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-family:'Poppins',sans-serif;font-size:.82rem;outline:none;box-sizing:border-box;"/>
-              </div>
-            </div>
-
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;">
-              <div>
-                <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:.3rem;">Email</label>
-                <input id="cm_email" type="email" value="${c.email||''}" placeholder="contact@company.ph"
-                  style="width:100%;padding:.55rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-family:'Poppins',sans-serif;font-size:.82rem;outline:none;box-sizing:border-box;"/>
-              </div>
-              <div>
-                <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:.3rem;">Phone</label>
-                <input id="cm_phone" type="text" value="${c.phone||''}" placeholder="+63 9XX XXX XXXX"
-                  style="width:100%;padding:.55rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-family:'Poppins',sans-serif;font-size:.82rem;outline:none;box-sizing:border-box;"/>
-              </div>
-            </div>
-
-            <div>
-              <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:.3rem;">Description</label>
-              <textarea id="cm_desc" rows="3" placeholder="e.g. Vegetable supplier providing bulk produce weekly..."
-                style="width:100%;padding:.55rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-family:'Poppins',sans-serif;font-size:.82rem;outline:none;resize:vertical;box-sizing:border-box;">${c.description||''}</textarea>
-            </div>
-
-            <div>
-              <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:.4rem;">Star Rating</label>
-              <div style="display:flex;gap:.3rem;" id="starPicker">
-                ${Array.from({length:5},(_,i)=>`
-                  <button onclick="CRM.setStar(${i+1})" id="starBtn_${i+1}"
-                    style="background:none;border:none;cursor:pointer;padding:2px;">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="${i<(c.stars||3)?'#f59e0b':'none'}" stroke="#f59e0b" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                  </button>`).join('')}
-              </div>
-              <input type="hidden" id="cm_stars" value="${c.stars||3}"/>
-            </div>
-
-            <div style="display:flex;gap:.75rem;margin-top:.25rem;">
-              <button onclick="CRM.closeModal()" class="btn btn-ghost" style="flex:1;justify-content:center;">Cancel</button>
-              <button onclick="CRM.save()" class="btn btn-primary" style="flex:1;justify-content:center;">${isEdit?'Save Changes':'Add Contact'}</button>
-            </div>
-          </div>
-        </div>
-      </div>
-      <style>@keyframes modalIn{from{opacity:0;transform:translateY(16px) scale(.98);}to{opacity:1;transform:translateY(0) scale(1);}}</style>
-    `;
+  async function loadHistory() {
+    const { data, error } = await window.db
+      .from('crm_history').select('*')
+      .order('created_at', { ascending: false }).limit(100);
+    if (error) { console.error('[CRM] history:', error.message); return; }
+    crmHistory = (data || []).map(h => ({
+      ...h,
+      date: h.created_at ? new Date(h.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : h.date || '—',
+    }));
   }
 
-  // ── MAIN RENDER ────────────────────────────────────────────
+  async function logHistory(contact, action, notes = '') {
+    await window.db.from('crm_history').insert({
+      contact: contact.name, company: contact.company,
+      action, by: session?.name || 'Admin', notes,
+    });
+  }
+
+  // ── Render ─────────────────────────────────────────────────
   function render() {
     const vis = crmContacts.filter(c => {
       const ms = c.name.toLowerCase().includes(crmSearch.toLowerCase()) || c.company.toLowerCase().includes(crmSearch.toLowerCase());
@@ -187,19 +62,17 @@ document.addEventListener('DOMContentLoaded', function () {
       return ms && mt;
     });
     const histVis  = crmHistory.filter(h =>
-      h.contact.toLowerCase().includes(histSearch.toLowerCase()) ||
-      h.company.toLowerCase().includes(histSearch.toLowerCase()) ||
-      h.action.toLowerCase().includes(histSearch.toLowerCase())
+      (h.contact||'').toLowerCase().includes(histSearch.toLowerCase()) ||
+      (h.company||'').toLowerCase().includes(histSearch.toLowerCase()) ||
+      (h.action||'').toLowerCase().includes(histSearch.toLowerCase())
     );
-    const buyers    = crmContacts.filter(c=>c.type==='Buyer').length;
-    const suppliers = crmContacts.filter(c=>c.type==='Supplier').length;
-    const partners  = crmContacts.filter(c=>c.type==='Partner').length;
-    const enabled   = crmContacts.filter(c=>c.enabled).length;
-    const disabled  = crmContacts.filter(c=>!c.enabled).length;
+    const buyers    = crmContacts.filter(c => c.type === 'Buyer').length;
+    const suppliers = crmContacts.filter(c => c.type === 'Supplier').length;
+    const partners  = crmContacts.filter(c => c.type === 'Partner').length;
+    const enabled   = crmContacts.filter(c => c.enabled).length;
+    const disabled  = crmContacts.filter(c => !c.enabled).length;
 
     document.getElementById('pageContent').innerHTML = `
-
-      <!-- Header -->
       <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:1.25rem;">
         <div>
           <h1 class="page-title" style="margin-bottom:0;">CRM</h1>
@@ -212,7 +85,6 @@ document.addEventListener('DOMContentLoaded', function () {
           </button>` : ''}
       </div>
 
-      <!-- Stats -->
       <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:1rem;margin-bottom:1.5rem;">
         <div class="card" style="display:flex;align-items:center;gap:.75rem;">
           <div style="width:38px;height:38px;background:#eff6ff;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
@@ -222,7 +94,7 @@ document.addEventListener('DOMContentLoaded', function () {
         </div>
         <div class="card" style="display:flex;align-items:center;gap:.75rem;">
           <div style="width:38px;height:38px;background:#fff7ed;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
           </div>
           <div><div style="font-size:1.4rem;font-weight:700;color:#f59e0b;line-height:1;">${suppliers}</div><div style="font-size:.72rem;color:var(--muted);">Suppliers</div></div>
         </div>
@@ -248,21 +120,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
       <!-- Tabs -->
       <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:1.5rem;">
-        <button onclick="CRM.tab('contacts')"
-          style="padding:.6rem 1.25rem;border:none;background:none;font-family:'Poppins',sans-serif;font-size:.83rem;font-weight:600;cursor:pointer;border-bottom:2px solid ${activeTab==='contacts'?'var(--green-dark)':'transparent'};color:${activeTab==='contacts'?'var(--green-dark)':'var(--muted)'};margin-bottom:-2px;">
-          Contacts
-        </button>
-        <button onclick="CRM.tab('manage')"
-          style="padding:.6rem 1.25rem;border:none;background:none;font-family:'Poppins',sans-serif;font-size:.83rem;font-weight:600;cursor:pointer;border-bottom:2px solid ${activeTab==='manage'?'var(--green-dark)':'transparent'};color:${activeTab==='manage'?'var(--green-dark)':'var(--muted)'};margin-bottom:-2px;">
-          Manage
-        </button>
-        <button onclick="CRM.tab('history')"
-          style="padding:.6rem 1.25rem;border:none;background:none;font-family:'Poppins',sans-serif;font-size:.83rem;font-weight:600;cursor:pointer;border-bottom:2px solid ${activeTab==='history'?'var(--green-dark)':'transparent'};color:${activeTab==='history'?'var(--green-dark)':'var(--muted)'};margin-bottom:-2px;">
-          History
-        </button>
+        ${['contacts','manage','history'].map(t => `
+          <button onclick="CRM.tab('${t}')"
+            style="padding:.6rem 1.25rem;border:none;background:none;font-family:'Poppins',sans-serif;font-size:.83rem;font-weight:600;cursor:pointer;border-bottom:2px solid ${activeTab===t?'var(--green-dark)':'transparent'};color:${activeTab===t?'var(--green-dark)':'var(--muted)'};margin-bottom:-2px;text-transform:capitalize;">
+            ${t}
+          </button>`).join('')}
       </div>
 
-      <!-- ══ CONTACTS TAB ══ -->
+      <!-- CONTACTS TAB -->
       ${activeTab === 'contacts' ? `
         <div style="display:flex;gap:.75rem;margin-bottom:1.25rem;">
           <div style="flex:1;position:relative;">
@@ -271,16 +136,14 @@ document.addEventListener('DOMContentLoaded', function () {
               style="width:100%;padding:.55rem .75rem .55rem 2.2rem;border:1.5px solid var(--border);border-radius:8px;font-family:'Poppins',sans-serif;font-size:.82rem;outline:none;box-sizing:border-box;"/>
           </div>
           <div style="position:relative;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);pointer-events:none;"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-            <select onchange="CRM.filterType(this.value)" style="padding:.55rem 2rem .55rem 2rem;border:1.5px solid var(--border);border-radius:8px;font-family:'Poppins',sans-serif;font-size:.82rem;outline:none;background:white;cursor:pointer;appearance:none;">
-              ${['All Types','Buyer','Supplier','Partner'].map(t=>`<option ${crmType===t?'selected':''}>${t}</option>`).join('')}
+            <select onchange="CRM.filterType(this.value)" style="padding:.55rem 2rem .55rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-family:'Poppins',sans-serif;font-size:.82rem;outline:none;background:white;cursor:pointer;appearance:none;">
+              ${['All Types','Buyer','Supplier','Partner'].map(t => `<option ${crmType===t?'selected':''}>${t}</option>`).join('')}
             </select>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" style="position:absolute;right:9px;top:50%;transform:translateY(-50%);pointer-events:none;"><polyline points="6 9 12 15 18 9"/></svg>
           </div>
         </div>
-
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;">
-          ${vis.map(c=>`
+          ${vis.length ? vis.map(c => `
             <div class="card" style="display:flex;flex-direction:column;${!c.enabled?'opacity:.55;':''}">
               <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:.75rem;">
                 <div style="display:flex;align-items:center;gap:.65rem;">
@@ -291,57 +154,49 @@ document.addEventListener('DOMContentLoaded', function () {
                   </div>
                 </div>
                 <div style="display:flex;flex-direction:column;align-items:flex-end;gap:.3rem;">
-                  <span class="badge ${typeColor[c.type]}">${c.type}</span>
+                  <span class="badge ${typeColor[c.type]||'badge-gray'}">${c.type}</span>
                   ${!c.enabled?`<span style="font-size:.62rem;font-weight:600;color:#ef4444;background:#fee2e2;padding:.1rem .45rem;border-radius:999px;">Disabled</span>`:''}
                 </div>
               </div>
-
-              <!-- Description -->
               <p style="font-size:.75rem;color:var(--muted);line-height:1.55;margin-bottom:.75rem;border-left:3px solid var(--sage);padding-left:.6rem;">${c.description||'—'}</p>
-
-              <!-- Contact info -->
               <div style="display:flex;flex-direction:column;gap:.3rem;margin-bottom:.75rem;">
                 <div style="display:flex;align-items:center;gap:.5rem;font-size:.76rem;color:var(--muted);">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>${c.email}
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>${c.email||'—'}
                 </div>
                 <div style="display:flex;align-items:center;gap:.5rem;font-size:.76rem;color:var(--muted);">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.62 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>${c.phone}
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.62 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>${c.phone||'—'}
                 </div>
                 <div style="display:flex;align-items:center;gap:.5rem;font-size:.76rem;color:var(--muted);">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/></svg>${c.location}
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/></svg>${c.location||'—'}
                 </div>
               </div>
-
               <div style="display:flex;align-items:center;justify-content:space-between;margin-top:auto;">
-                <div style="display:flex;gap:1px;">${starsHTML(c.stars)}</div>
+                <div style="display:flex;gap:1px;">${starsHTML(c.stars || 0)}</div>
                 <div style="display:flex;align-items:center;gap:.5rem;">
-                  <span style="font-size:.7rem;color:var(--muted);">Last: ${c.last}</span>
+                  <span style="font-size:.7rem;color:var(--muted);">Last: ${c.last_contact || c.last || '—'}</span>
                   <button onclick="CRM.openEdit(${c.id})" title="Edit" style="background:none;border:none;cursor:pointer;color:var(--muted);padding:3px;border-radius:5px;">
                     <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                   </button>
                 </div>
               </div>
-            </div>`).join('')}
+            </div>`).join('')
+          : `<div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--muted);">No contacts found.</div>`}
         </div>
       ` : ''}
 
-      <!-- ══ MANAGE TAB ══ -->
+      <!-- MANAGE TAB -->
       ${activeTab === 'manage' ? `
         <div class="card" style="padding:0;overflow:hidden;">
           <table>
             <thead>
               <tr>
-                <th style="padding-left:1.5rem;">Contact</th>
-                <th>Type</th>
-                <th>Location</th>
-                <th>Stars</th>
-                <th>Last Contact</th>
-                <th style="text-align:center;">Visible</th>
+                <th style="padding-left:1.5rem;">Contact</th><th>Type</th><th>Location</th>
+                <th>Stars</th><th>Last Contact</th><th style="text-align:center;">Visible</th>
                 <th style="text-align:right;padding-right:1.5rem;">Actions</th>
               </tr>
             </thead>
             <tbody>
-              ${crmContacts.map(c=>`
+              ${crmContacts.map(c => `
                 <tr>
                   <td style="padding-left:1.5rem;">
                     <div style="display:flex;align-items:center;gap:.6rem;">
@@ -352,10 +207,10 @@ document.addEventListener('DOMContentLoaded', function () {
                       </div>
                     </div>
                   </td>
-                  <td><span class="badge ${typeColor[c.type]}">${c.type}</span></td>
-                  <td style="font-size:.82rem;color:var(--muted);">${c.location}</td>
-                  <td><div style="display:flex;gap:1px;">${starsHTML(c.stars)}</div></td>
-                  <td style="font-size:.78rem;color:var(--muted);">${c.last}</td>
+                  <td><span class="badge ${typeColor[c.type]||'badge-gray'}">${c.type}</span></td>
+                  <td style="font-size:.82rem;color:var(--muted);">${c.location||'—'}</td>
+                  <td><div style="display:flex;gap:1px;">${starsHTML(c.stars||0)}</div></td>
+                  <td style="font-size:.78rem;color:var(--muted);">${c.last_contact || c.last || '—'}</td>
                   <td style="text-align:center;">
                     <label style="position:relative;display:inline-block;width:42px;height:22px;cursor:pointer;">
                       <input type="checkbox" ${c.enabled?'checked':''} onchange="CRM.toggle(${c.id})" style="opacity:0;width:0;height:0;position:absolute;"/>
@@ -377,7 +232,7 @@ document.addEventListener('DOMContentLoaded', function () {
         </div>
       ` : ''}
 
-      <!-- ══ HISTORY TAB ══ -->
+      <!-- HISTORY TAB -->
       ${activeTab === 'history' ? `
         <div style="margin-bottom:1.25rem;">
           <div style="position:relative;max-width:400px;">
@@ -389,23 +244,16 @@ document.addEventListener('DOMContentLoaded', function () {
         <div class="card" style="padding:0;overflow:hidden;">
           <table>
             <thead>
-              <tr>
-                <th style="padding-left:1.5rem;">Date</th>
-                <th>Contact</th>
-                <th>Company</th>
-                <th>Action</th>
-                <th>Notes</th>
-                <th>By</th>
-              </tr>
+              <tr><th style="padding-left:1.5rem;">Date</th><th>Contact</th><th>Company</th><th>Action</th><th>Notes</th><th>By</th></tr>
             </thead>
             <tbody>
-              ${histVis.length ? histVis.map(h=>`
+              ${histVis.length ? histVis.map(h => `
                 <tr>
                   <td style="padding-left:1.5rem;color:var(--muted);white-space:nowrap;">${h.date}</td>
                   <td style="font-weight:600;font-size:.84rem;">${h.contact}</td>
                   <td style="font-size:.78rem;color:var(--muted);">${h.company}</td>
                   <td><span style="font-size:.72rem;font-weight:600;padding:.2rem .6rem;border-radius:999px;${actionBadgeStyle(h.action)}">${h.action}</span></td>
-                  <td style="font-size:.75rem;color:var(--muted);max-width:220px;">${h.notes}</td>
+                  <td style="font-size:.75rem;color:var(--muted);max-width:220px;">${h.notes||'—'}</td>
                   <td style="font-size:.78rem;color:var(--muted);">${h.by}</td>
                 </tr>`).join('')
               : `<tr><td colspan="6" style="text-align:center;padding:2.5rem;color:var(--muted);font-size:.82rem;">No history found.</td></tr>`}
@@ -415,45 +263,110 @@ document.addEventListener('DOMContentLoaded', function () {
       ` : ''}
 
       ${crmModal ? modalHTML() : ''}
+      <style>@keyframes modalIn{from{opacity:0;transform:translateY(16px) scale(.98);}to{opacity:1;transform:translateY(0) scale(1);}}</style>
     `;
   }
 
-  // ── PUBLIC API ─────────────────────────────────────────────
-  window.CRM = {
+  function modalHTML() {
+    const isEdit = crmModal === 'edit' && editContact;
+    const c      = isEdit ? editContact : {};
+    return `
+      <div style="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:999;display:flex;align-items:center;justify-content:center;padding:1rem;" onclick="CRM.closeModal()">
+        <div style="background:white;border-radius:16px;padding:1.75rem 2rem;width:100%;max-width:500px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.15);animation:modalIn .2s ease;" onclick="event.stopPropagation()">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;">
+            <h2 style="font-size:1.05rem;font-weight:700;">${isEdit ? 'Edit Contact' : 'Add New Contact'}</h2>
+            <button onclick="CRM.closeModal()" style="background:none;border:none;cursor:pointer;color:var(--muted);">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:.9rem;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;">
+              <div>
+                <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:.3rem;">Full Name <span style="color:var(--red);">*</span></label>
+                <input id="cm_name" type="text" value="${c.name||''}" placeholder="e.g. Roberto Cruz"
+                  style="width:100%;padding:.55rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-family:'Poppins',sans-serif;font-size:.82rem;outline:none;box-sizing:border-box;"/>
+                <div id="cm_name_err" style="color:var(--red);font-size:.7rem;margin-top:2px;display:none;">Required.</div>
+              </div>
+              <div>
+                <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:.3rem;">Company <span style="color:var(--red);">*</span></label>
+                <input id="cm_company" type="text" value="${c.company||''}" placeholder="e.g. Fresh Market Co."
+                  style="width:100%;padding:.55rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-family:'Poppins',sans-serif;font-size:.82rem;outline:none;box-sizing:border-box;"/>
+                <div id="cm_company_err" style="color:var(--red);font-size:.7rem;margin-top:2px;display:none;">Required.</div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;">
+              <div>
+                <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:.3rem;">Type</label>
+                <select id="cm_type" style="width:100%;padding:.55rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-family:'Poppins',sans-serif;font-size:.82rem;outline:none;">
+                  ${['Buyer','Supplier','Partner'].map(t=>`<option ${c.type===t?'selected':''}>${t}</option>`).join('')}
+                </select>
+              </div>
+              <div>
+                <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:.3rem;">Location</label>
+                <input id="cm_loc" type="text" value="${c.location||''}" placeholder="e.g. Manila"
+                  style="width:100%;padding:.55rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-family:'Poppins',sans-serif;font-size:.82rem;outline:none;box-sizing:border-box;"/>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;">
+              <div>
+                <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:.3rem;">Email</label>
+                <input id="cm_email" type="email" value="${c.email||''}" placeholder="email@example.com"
+                  style="width:100%;padding:.55rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-family:'Poppins',sans-serif;font-size:.82rem;outline:none;box-sizing:border-box;"/>
+              </div>
+              <div>
+                <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:.3rem;">Phone</label>
+                <input id="cm_phone" type="text" value="${c.phone||''}" placeholder="+63 9XX XXX XXXX"
+                  style="width:100%;padding:.55rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-family:'Poppins',sans-serif;font-size:.82rem;outline:none;box-sizing:border-box;"/>
+              </div>
+            </div>
+            <div>
+              <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:.3rem;">Description</label>
+              <textarea id="cm_desc" rows="3" placeholder="Brief description of this contact..."
+                style="width:100%;padding:.55rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-family:'Poppins',sans-serif;font-size:.82rem;outline:none;resize:vertical;box-sizing:border-box;">${c.description||''}</textarea>
+            </div>
+            <div>
+              <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:.4rem;">Star Rating</label>
+              <div style="display:flex;gap:.3rem;">
+                ${Array.from({length:5},(_,i)=>`
+                  <button id="starBtn_${i+1}" type="button" onclick="CRM.setStar(${i+1})"
+                    style="background:none;border:none;cursor:pointer;padding:2px;">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="${i<(c.stars||3)?'#f59e0b':'none'}" stroke="#f59e0b" stroke-width="2">
+                      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                    </svg>
+                  </button>`).join('')}
+                <input type="hidden" id="cm_stars" value="${c.stars||3}"/>
+              </div>
+            </div>
+            <div style="display:flex;gap:.75rem;margin-top:.25rem;">
+              <button onclick="CRM.closeModal()" class="btn btn-ghost" style="flex:1;justify-content:center;">Cancel</button>
+              <button onclick="CRM.save()" class="btn btn-primary" style="flex:1;justify-content:center;">${isEdit ? 'Save Changes' : 'Add Contact'}</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }
 
-    tab(t)        { activeTab=t; render(); },
-    search(v)     { crmSearch=v; render(); },
-    filterType(v) { crmType=v; render(); },
-    histSearch(v) { histSearch=v; render(); },
+  // ── Public API ─────────────────────────────────────────────
+  window.CRM = {
+    tab(t)        { activeTab = t; render(); },
+    search(v)     { crmSearch = v; render(); },
+    filterType(v) { crmType = v; render(); },
+    histSearch(v) { histSearch = v; render(); },
 
     setStar(n) {
       const input = document.getElementById('cm_stars');
       if (input) input.value = n;
-      Array.from({length:5},(_,i) => {
+      Array.from({length:5}, (_, i) => {
         const btn = document.getElementById(`starBtn_${i+1}`);
         if (btn) btn.querySelector('svg').setAttribute('fill', i < n ? '#f59e0b' : 'none');
       });
     },
 
-    openAdd() {
-      crmModal = 'add';
-      editContact = null;
-      render();
-    },
+    openAdd()    { crmModal = 'add'; editContact = null; render(); },
+    openEdit(id) { crmModal = 'edit'; editContact = crmContacts.find(c => c.id === id); render(); },
+    closeModal() { crmModal = false; editContact = null; render(); },
 
-    openEdit(id) {
-      crmModal = 'edit';
-      editContact = crmContacts.find(c => c.id === id);
-      render();
-    },
-
-    closeModal() {
-      crmModal = false;
-      editContact = null;
-      render();
-    },
-
-    save() {
+    async save() {
       const name    = document.getElementById('cm_name')?.value.trim();
       const company = document.getElementById('cm_company')?.value.trim();
       const type    = document.getElementById('cm_type')?.value;
@@ -469,43 +382,49 @@ document.addEventListener('DOMContentLoaded', function () {
       if (coErr)   coErr.style.display   = !company ? 'block' : 'none';
       if (!name || !company) return;
 
-      const today = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+      const today = new Date().toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
 
       if (crmModal === 'edit' && editContact) {
-        // TODO: SUPABASE — await supabase.from('crm_contacts').update({ name,company,type,location:loc,email,phone,description:desc,stars,last:today }).eq('id', editContact.id)
-        Object.assign(crmContacts.find(c=>c.id===editContact.id), { name,company,type,location:loc,email,phone,description:desc,stars,last:today });
-        logHistory({ name, company }, 'Edited', `Updated contact details.`);
+        const { error } = await window.db.from('crm_contacts')
+          .update({ name, company, type, location: loc, email, phone, description: desc, stars, last_contact: today })
+          .eq('id', editContact.id);
+        if (error) { alert('Update failed: ' + error.message); return; }
+        await logHistory({ name, company }, 'Edited', 'Updated contact details.');
       } else {
-        // TODO: SUPABASE — await supabase.from('crm_contacts').insert({ name,company,type,location:loc,email,phone,description:desc,stars,last:today,enabled:true })
-        const newContact = { id:nextId++, name,company,type,email,phone,location:loc,description:desc,stars,last:today,enabled:true };
-        crmContacts.push(newContact);
-        logHistory(newContact, 'Added', `New ${type} contact added.`);
+        const { error } = await window.db.from('crm_contacts')
+          .insert({ name, company, type, location: loc, email, phone, description: desc, stars, last_contact: today, enabled: true });
+        if (error) { alert('Insert failed: ' + error.message); return; }
+        await logHistory({ name, company }, 'Added', `New ${type} contact added.`);
       }
 
-      crmModal = false;
-      editContact = null;
+      crmModal = false; editContact = null;
+      await Promise.all([loadContacts(), loadHistory()]);
       render();
     },
 
-    toggle(id) {
-      const c = crmContacts.find(c=>c.id===id);
+    async toggle(id) {
+      const c = crmContacts.find(c => c.id === id);
       if (!c) return;
-      c.enabled = !c.enabled;
-      // TODO: SUPABASE — await supabase.from('crm_contacts').update({ enabled: c.enabled }).eq('id', id)
-      logHistory(c, c.enabled ? 'Enabled' : 'Disabled', `Contact ${c.enabled?'enabled':'disabled'} by admin.`);
+      const newEnabled = !c.enabled;
+      const { error } = await window.db.from('crm_contacts')
+        .update({ enabled: newEnabled }).eq('id', id);
+      if (error) { alert('Failed: ' + error.message); return; }
+      await logHistory(c, newEnabled ? 'Enabled' : 'Disabled', `Contact ${newEnabled?'enabled':'disabled'} by admin.`);
+      await Promise.all([loadContacts(), loadHistory()]);
       render();
     },
 
-    del(id) {
+    async del(id) {
       if (!confirm('Delete this contact? This cannot be undone.')) return;
-      const c = crmContacts.find(c=>c.id===id);
-      if (c) logHistory(c, 'Deleted', `Contact permanently removed.`);
-      // TODO: SUPABASE — await supabase.from('crm_contacts').delete().eq('id', id)
-      crmContacts = crmContacts.filter(c=>c.id!==id);
+      const c = crmContacts.find(c => c.id === id);
+      if (c) await logHistory(c, 'Deleted', 'Contact permanently removed.');
+      const { error } = await window.db.from('crm_contacts').delete().eq('id', id);
+      if (error) { alert('Delete failed: ' + error.message); return; }
+      await Promise.all([loadContacts(), loadHistory()]);
       render();
     },
   };
 
+  await Promise.all([loadContacts(), loadHistory()]);
   render();
-
 });
