@@ -1,130 +1,97 @@
 // ================================================================
 // worker-dashboard.js  –  AgriSmart Worker Dashboard
-// Pulls live data from: AttendanceStore, tasks, elearning, inventory
-// ================================================================
-//
-// ── SUPABASE SETUP FOR GITHUB COPILOT ────────────────────────────
-//
-// TABLE: tasks
-//   worker     text  → match Auth.getSession().name
-//   completed  bool
-//   priority   text  → 'High' | 'Medium' | 'Low'
-//   title      text
-//   due        text
-//   created_at timestamptz
-//
-// TABLE: attendance
-//   worker_id  int8 → FK workers.id
-//   date       date
-//   time_in    text
-//   time_out   text
-//   status     text → 'present' | 'late' | 'absent'
-//
-// TABLE: elearning_modules
-//   id         int8
-//   title      text
-//   visible    bool
-//   created_at timestamptz
-//
-// TABLE: elearning_progress
-//   worker_id  int8 → FK workers.id
-//   module_id  int8 → FK elearning_modules.id
-//   progress   int4 → 0–100
-//   completed  bool
-//   updated_at timestamptz
-//
-// LOAD ALL DASHBOARD DATA:
-//   const worker = Auth.getSession()?.name
-//   const [{ data: taskRows }, { data: attendRows }, { data: progressRows }]
-//     = await Promise.all([
-//       db.from('tasks').select('*').eq('worker', worker),
-//       db.from('attendance').select('*')
-//         .eq('worker_id', currentWorkerId)
-//         .gte('date', firstDayOfMonth),
-//       db.from('elearning_progress').select('*').eq('worker_id', currentWorkerId),
-//     ])
-//
-// REAL-TIME:
-//   ['tasks','attendance','elearning_progress'].forEach(table =>
-//     db.channel(`dash-${table}`)
-//       .on('postgres_changes', { event:'*', schema:'public', table }, () => renderDashboard())
-//       .subscribe()
-//   )
 // ================================================================
 
-renderShell('dashboard');
+(async function () {
 
-// ── READ LIVE DATA FROM OTHER MODULES ────────────────────────────
+  renderShell('dashboard');
 
-// 1. ATTENDANCE — from AttendanceStore (same store as timeinout + attendance pages)
-const allLogs = (AttendanceStore.getLogs() || []).filter(r => !r.active);
-const now       = new Date();
-const thisMonth = now.getMonth();
-const thisYear  = now.getFullYear();
+  const now       = new Date();
+  const thisMonth = now.getMonth();
+  const thisYear  = now.getFullYear();
 
-const monthLogs   = allLogs.filter(r => {
-  const d = new Date(r.date);
-  return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
-});
-const daysPresent = monthLogs.filter(r => r.status === 'present').length;
-const daysLate    = monthLogs.filter(r => r.status === 'late').length;
-const daysAbsent  = monthLogs.filter(r => r.status === 'absent').length;
+  const MONTH_NAMES = ['January','February','March','April','May','June',
+                       'July','August','September','October','November','December'];
 
-// 2. TASKS — from window._workerTasks if tasks page has run, else fallback sample
-// TODO: SUPABASE — replace with: db.from('tasks').select('*').eq('worker', Auth.getSession()?.name)
-const TASKS = window._workerTasks || [
-  { id:1, priority:'High',   completed:false, title:'Irrigate Rice Paddies – Section A',  due:'Mar 5, 2026',  isNew:true  },
-  { id:2, priority:'Medium', completed:true,  title:'Apply Fertilizer to Corn Fields',    due:'Mar 4, 2026',  isNew:false },
-  { id:3, priority:'Low',    completed:false, title:'Check Pest Traps',                   due:'Mar 5, 2026',  isNew:true  },
-  { id:4, priority:'High',   completed:false, title:'Harvest Ripe Tomatoes',              due:'Mar 6, 2026',  isNew:false },
-  { id:5, priority:'Medium', completed:true,  title:'Equipment Maintenance Check',        due:'Mar 3, 2026',  isNew:false },
-  { id:6, priority:'Medium', completed:false, title:'Soil Sample Collection',             due:'Mar 7, 2026',  isNew:false },
-];
-const pendingTasks   = TASKS.filter(t => !t.completed);
-const completedTasks = TASKS.filter(t =>  t.completed);
-const newTasks       = TASKS.filter(t => !t.completed && t.isNew);
+  // ── 1. ATTENDANCE (async — Supabase) ─────────────────────────
+  const allLogsRaw    = await AttendanceStore.getLogs()  || [];
+  const tLog          = await AttendanceStore.getTodayLog();
+  const timedIn       = tLog ? tLog.active : false;
+  const timedOut      = tLog ? (!tLog.active && !!tLog.timeOut && tLog.timeOut !== '--') : false;
 
-// 3. E-LEARNING — from window.courseProgress if elearning page has run, else all zero
-// TODO: SUPABASE — replace with: db.from('elearning_progress').select('*').eq('worker_id', id)
-const COURSES = [
-  { id:1, title:'Soil Health Assessment Fundamentals',   tag:'Soil Science',     tagColor:'#2D5A27' },
-  { id:2, title:'Organic Farming Techniques',            tag:'Farming Methods',  tagColor:'#f59e0b' },
-  { id:3, title:'Irrigation Systems & Water Management', tag:'Water Management', tagColor:'#3b82f6' },
-  { id:4, title:'Pest & Disease Identification',         tag:'Crop Protection',  tagColor:'#ef4444' },
-  { id:5, title:'Sustainable Agriculture Practices',     tag:'Sustainability',   tagColor:'#22c55e' },
-  { id:6, title:'Farm Equipment Safety & Maintenance',   tag:'Safety',           tagColor:'#f59e0b' },
-];
+  const completedLogs = allLogsRaw.filter(r => !r.active);
+  const monthLogs     = completedLogs.filter(r => {
+    const d = new Date(r.dateKey + 'T00:00:00');
+    return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
+  });
+  const daysPresent = monthLogs.filter(r => r.status === 'present').length;
+  const daysLate    = monthLogs.filter(r => r.status === 'late').length;
+  const daysAbsent  = monthLogs.filter(r => r.status === 'absent').length;
 
-const CP = window.courseProgress || { 1:0, 2:0, 3:0, 4:0, 5:0, 6:0 };
+  // ── 2. TASKS (Supabase) ───────────────────────────────────────
+  const session = Auth.getSession();
+  let TASKS = [];
+  try {
+    if (session?.worker_id) {
+      const { data } = await window.db
+        .from('tasks')
+        .select('*')
+        .eq('worker_id', session.worker_id)
+        .order('created_at', { ascending: false });
+      TASKS = (data || []).map(t => ({
+        id:        t.id,
+        priority:  t.priority  || 'Low',
+        completed: t.completed || false,
+        title:     t.title,
+        due:       t.due_date ? new Date(t.due_date).toLocaleDateString('en-US',{ month:'short', day:'numeric', year:'numeric' }) : '—',
+        isNew:     false,
+      }));
+    }
+  } catch(e) { console.warn('[Dashboard] tasks:', e.message); }
 
-const completedModules  = COURSES.filter(c => (CP[c.id]||0) >= 100);
-const inProgressModules = COURSES.filter(c => (CP[c.id]||0) > 0 && (CP[c.id]||0) < 100);
-const notStarted        = COURSES.filter(c => (CP[c.id]||0) === 0);
-const newModules        = notStarted;
-const pendingModules    = inProgressModules;
+  if (!TASKS.length) {
+    TASKS = [
+      { id:1, priority:'High',   completed:false, title:'Irrigate Rice Paddies – Section A',  due:'Mar 5, 2026',  isNew:true  },
+      { id:2, priority:'Medium', completed:true,  title:'Apply Fertilizer to Corn Fields',    due:'Mar 4, 2026',  isNew:false },
+      { id:3, priority:'Low',    completed:false, title:'Check Pest Traps',                   due:'Mar 5, 2026',  isNew:true  },
+      { id:4, priority:'High',   completed:false, title:'Harvest Ripe Tomatoes',              due:'Mar 6, 2026',  isNew:false },
+      { id:5, priority:'Medium', completed:true,  title:'Equipment Maintenance Check',        due:'Mar 3, 2026',  isNew:false },
+      { id:6, priority:'Medium', completed:false, title:'Soil Sample Collection',             due:'Mar 7, 2026',  isNew:false },
+    ];
+  }
 
-// ── HELPERS ───────────────────────────────────────────────────────
-const MONTH_NAMES = ['January','February','March','April','May','June',
-                     'July','August','September','October','November','December'];
+  const pendingTasks   = TASKS.filter(t => !t.completed);
+  const completedTasks = TASKS.filter(t =>  t.completed);
+  const newTasks       = TASKS.filter(t => !t.completed && t.isNew);
 
-const priorityColors = {
-  High:   { bg:'#fee2e2', text:'#dc2626', dot:'#ef4444' },
-  Medium: { bg:'#fef3c7', text:'#d97706', dot:'#f59e0b' },
-  Low:    { bg:'#f3f4f6', text:'#6b7280', dot:'#9ca3af' },
-};
+  // ── 3. E-LEARNING (Supabase) ──────────────────────────────────
+  const COURSES = [
+    { id:1, title:'Soil Health Assessment Fundamentals',   tag:'Soil Science',     tagColor:'#2D5A27' },
+    { id:2, title:'Organic Farming Techniques',            tag:'Farming Methods',  tagColor:'#f59e0b' },
+    { id:3, title:'Irrigation Systems & Water Management', tag:'Water Management', tagColor:'#3b82f6' },
+    { id:4, title:'Pest & Disease Identification',         tag:'Crop Protection',  tagColor:'#ef4444' },
+    { id:5, title:'Sustainable Agriculture Practices',     tag:'Sustainability',   tagColor:'#22c55e' },
+    { id:6, title:'Farm Equipment Safety & Maintenance',   tag:'Safety',           tagColor:'#f59e0b' },
+  ];
 
-function priorityBadge(p) {
-  const c = priorityColors[p] || priorityColors.Low;
-  return `<span style="background:${c.bg};color:${c.text};font-size:.65rem;font-weight:700;padding:.15rem .5rem;border-radius:999px;">${p}</span>`;
-}
+  let CP = { 1:0, 2:0, 3:0, 4:0, 5:0, 6:0 };
+  try {
+    if (session?.worker_id) {
+      const { data } = await window.db
+        .from('elearning_progress')
+        .select('module_id, progress')
+        .eq('worker_id', session.worker_id);
+      (data || []).forEach(r => { CP[r.module_id] = r.progress || 0; });
+    }
+  } catch(e) { console.warn('[Dashboard] elearning:', e.message); }
 
-// ── MAIN RENDER ───────────────────────────────────────────────────
-function renderDashboard() {
+  const completedModules  = COURSES.filter(c => (CP[c.id]||0) >= 100);
+  const inProgressModules = COURSES.filter(c => (CP[c.id]||0) > 0 && (CP[c.id]||0) < 100);
+  const notStarted        = COURSES.filter(c => (CP[c.id]||0) === 0);
+  const newModules        = notStarted;
+  const pendingModules    = inProgressModules;
 
-  const timedIn  = AttendanceStore.isTimedInToday();
-  const timedOut = AttendanceStore.isTimedOutToday();
-  const tLog     = AttendanceStore.getTodayLog();
-
+  // ── 4. Attendance badge ───────────────────────────────────────
   let attendStatus, attendBg, attendDot;
   if (timedOut) {
     attendStatus = 'Done for Today';    attendBg = '#f0fdf4'; attendDot = '#22c55e';
@@ -134,6 +101,19 @@ function renderDashboard() {
     attendStatus = 'Not Yet Timed In';  attendBg = '#fffbeb'; attendDot = '#f59e0b';
   }
 
+  // ── Helpers ───────────────────────────────────────────────────
+  const priorityColors = {
+    High:   { bg:'#fee2e2', text:'#dc2626', dot:'#ef4444' },
+    Medium: { bg:'#fef3c7', text:'#d97706', dot:'#f59e0b' },
+    Low:    { bg:'#f3f4f6', text:'#6b7280', dot:'#9ca3af' },
+  };
+
+  function priorityBadge(p) {
+    const c = priorityColors[p] || priorityColors.Low;
+    return `<span style="background:${c.bg};color:${c.text};font-size:.65rem;font-weight:700;padding:.15rem .5rem;border-radius:999px;">${p}</span>`;
+  }
+
+  // ── 5. Render ─────────────────────────────────────────────────
   document.getElementById('pageContent').innerHTML = `
 
     <!-- Page Header -->
@@ -169,7 +149,7 @@ function renderDashboard() {
             Time In
           </div>
           <span style="font-size:.82rem;font-weight:700;color:${timedIn||timedOut?'#166534':'var(--muted)'};">
-            ${timedIn||timedOut ? tLog?.timeIn || '—' : 'Not yet'}
+            ${timedIn||timedOut ? (tLog?.timeIn || '—') : 'Not yet'}
           </span>
         </div>
 
@@ -179,7 +159,7 @@ function renderDashboard() {
             Time Out
           </div>
           <span style="font-size:.82rem;font-weight:700;color:${timedOut?'#166534':'var(--muted)'};">
-            ${timedOut ? tLog?.timeOut || '—' : 'Pending'}
+            ${timedOut ? (tLog?.timeOut || '—') : 'Pending'}
           </span>
         </div>
 
@@ -351,14 +331,14 @@ function renderDashboard() {
           <div style="font-weight:700;font-size:.95rem;">Recent Attendance</div>
           <a href="worker-attendance.html" style="font-size:.72rem;color:var(--green-dark);font-weight:600;text-decoration:none;">View all →</a>
         </div>
-        ${allLogs.length === 0 ? `
+        ${completedLogs.length === 0 ? `
           <div style="text-align:center;padding:1.5rem;color:var(--muted);font-size:.8rem;">
             <svg width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" style="margin:0 auto .5rem;display:block;opacity:.35;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
             No attendance records yet.<br>
             <a href="worker-timeinout.html" style="color:var(--green-dark);font-weight:600;">Time In</a> to start recording.
           </div>` : `
           <div style="display:flex;flex-direction:column;gap:.4rem;">
-            ${allLogs.slice(0,5).map(r => {
+            ${completedLogs.slice(0,5).map(r => {
               const sColor = r.status==='present'?'#22c55e':r.status==='late'?'#f59e0b':'#ef4444';
               const sBg    = r.status==='present'?'#f0fdf4':r.status==='late'?'#fffbeb':'#fef2f2';
               const sLabel = r.status==='present'?'Present':r.status==='late'?'Late':'Absent';
@@ -368,7 +348,7 @@ function renderDashboard() {
                     <span style="width:8px;height:8px;background:${sColor};border-radius:50%;flex-shrink:0;"></span>
                     <div>
                       <div style="font-size:.78rem;font-weight:600;">${r.date} <span style="font-weight:400;color:var(--muted);">· ${r.day||''}</span></div>
-                      <div style="font-size:.67rem;color:var(--muted);">${r.timeIn} → ${r.timeOut||'—'} · ${r.total||'—'}</div>
+                      <div style="font-size:.67rem;color:var(--muted);">${r.timeIn||'—'} → ${r.timeOut||'—'} · ${r.total||'—'}</div>
                     </div>
                   </div>
                   <span style="background:${sBg};color:${sColor};font-size:.67rem;font-weight:700;padding:.15rem .5rem;border-radius:999px;">${sLabel}</span>
@@ -422,6 +402,5 @@ function renderDashboard() {
       @keyframes dashBlink { 0%,100%{opacity:1} 50%{opacity:.3} }
     </style>
   `;
-}
 
-renderDashboard();
+})();
