@@ -26,7 +26,7 @@ const NAV_ITEMS = [
 ];
 
 function renderShell(activeId) {
-     const currentUser = Auth.requireAuth(['worker', 'supervisor']);
+     const currentUser = Auth.requireRole('worker', 'supervisor');
   if (!currentUser) return;
   const navHTML = NAV_ITEMS.map(item => `
     <a href="${item.href}" class="nav-item ${item.id === activeId ? 'active' : ''}">

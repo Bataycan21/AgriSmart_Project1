@@ -57,7 +57,7 @@ renderShell('dashboard');
 // ── READ LIVE DATA FROM OTHER MODULES ────────────────────────────
 
 // 1. ATTENDANCE — from AttendanceStore (same store as timeinout + attendance pages)
-const allLogs   = AttendanceStore.getLogs().filter(r => !r.active);
+const allLogs = (AttendanceStore.getLogs() || []).filter(r => !r.active);
 const now       = new Date();
 const thisMonth = now.getMonth();
 const thisYear  = now.getFullYear();
