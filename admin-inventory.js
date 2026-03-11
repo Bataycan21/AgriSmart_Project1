@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', async function () {
   async function loadAll() {
     const [inv, hist, req] = await Promise.all([
       window.db.from('inventory_items').select('*').order('name'),
-      window.db.from('inventory_history').select('*').order('date', { ascending: false }).limit(100),
+      window.db.from('inventory_history').select('*').order('created_at', { ascending: false }).limit(100),
       window.db.from('inventory_requests').select('*').order('created_at', { ascending: false }),
     ]);
     if (inv.error)  console.error('[Inv] items:', inv.error.message);
