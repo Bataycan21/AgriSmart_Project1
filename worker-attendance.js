@@ -52,7 +52,7 @@ document.addEventListener('DOMContentLoaded', async function () {
   }));
 
   const total   = records.length;
-  const present = records.filter(r => r.status === 'present').length;
+  const present = records.filter(r => r.status === 'present' || r.status === 'late').length;
   const late    = records.filter(r => r.status === 'late').length;
   const absent  = records.filter(r => r.status === 'absent').length;
 
