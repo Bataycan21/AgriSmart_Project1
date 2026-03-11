@@ -29,6 +29,7 @@ const statIcons = {
   'Inventory Items': `<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>`,
   'Active Workers':  `<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>`,
   'Predicted Yield': `<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>`,
+  'Total Tasks':     `<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>`,
 };
 
 function timeAgo(dateStr) {
@@ -49,8 +50,9 @@ function buildAttendPercents(rows) {
   rows.forEach(r => {
     const m = new Date(r.date + 'T00:00:00').getMonth();
     buckets[m][r.status] = (buckets[m][r.status]||0) + 1;
+    // Late workers are also present — count them in both
     if (r.status === 'late') {
-    buckets[m].present = (buckets[m].present||0) + 1;
+      buckets[m].present = (buckets[m].present||0) + 1;
     }
     buckets[m].total++;
   });
@@ -115,6 +117,7 @@ async function loadDashboard() {
     { data: taskRows },
     { data: taskTodayRows },
     { data: attendRows },
+    { data: crmRows },
   ] = await Promise.all([
     db.from('inventory_items').select('name, cat, qty, unit, status'),
     db.from('workers').select('id, name, status'),
@@ -122,6 +125,7 @@ async function loadDashboard() {
     db.from('tasks').select('title, worker, priority, status, completed, created_at, due_date, description').gte('created_at', `${currentYear}-01-01`),
     db.from('tasks').select('title, worker, priority, status, completed, due_date, time, progress_pct').eq('due_date', todayStr).order('time', { ascending: true }),
     db.from('attendance').select('status, date, worker_id').gte('date', `${currentYear}-01-01`),
+    db.from('crm_contacts').select('type, stars, enabled, created_at'),
   ]);
 
   const inventory  = invRows       || [];
@@ -130,6 +134,7 @@ async function loadDashboard() {
   const tasks      = taskRows      || [];
   const todayTasks = taskTodayRows || [];
   const attend     = attendRows    || [];
+  const crm        = crmRows       || [];
 
   const vm = visMonths();
 
@@ -160,6 +165,11 @@ async function loadDashboard() {
 
   const priorityCounts = { High:0, Medium:0, Low:0 };
   tasks.forEach(t => { if (priorityCounts[t.priority] !== undefined) priorityCounts[t.priority]++; });
+
+  // ── CRM counts ───────────────────────────────────────────────
+  const crmBuyers    = crm.filter(c => c.type === 'Buyer').length;
+  const crmSuppliers = crm.filter(c => c.type === 'Supplier').length;
+  const crmPartners  = crm.filter(c => c.type === 'Partner').length;
 
   // ── Build recent activity from real task completions ────────
   const recentCompleted = tasks
@@ -194,14 +204,6 @@ async function loadDashboard() {
   if (!notifications.length) notifications.push({ urgent:false, stroke:'#22c55e', text:'All systems looking good!' });
 
   // ── Stat cards ───────────────────────────────────────────────
-  const stats = [
-    { bg:'#f0fdf4', stroke:'#2D5A27', color:'',       trendColor:'#22c55e', trend:`${workers.length} registered`,  num: workers.length,              label:'Active Workers'   },
-    { bg:'#eff6ff', stroke:'#3b82f6', color:'blue',   trendColor:'#22c55e', trend:`${lowStock} low · ${outStock} out`, num: totalInv.toLocaleString(), label:'Inventory Items'  },
-    { bg:'#fff7ed', stroke:'#f59e0b', color:'orange', trendColor: activeWorkers > 0 ? '#22c55e':'#ef4444', trend:`${activeWorkers} active`, num: activeWorkers, label:'Active Workers'   },
-    { bg:'#faf5ff', stroke:'#8b5cf6', color:'purple', trendColor:'#22c55e', trend:`${preds.length} predictions`,   num: totalYield.toFixed(1)+'T',   label:'Predicted Yield'  },
-  ];
-
-  // Fix: deduplicate — use distinct card labels
   const statCards = [
     { bg:'#eff6ff', stroke:'#3b82f6', color:'blue',   trendColor:'#22c55e', trend:`${lowStock} low · ${outStock} out`, num: totalInv.toLocaleString(), label:'Inventory Items' },
     { bg:'#fff7ed', stroke:'#f59e0b', color:'orange', trendColor: activeWorkers > 0 ? '#22c55e':'#ef4444', trend:`${activeWorkers} of ${workers.length} active`, num: activeWorkers, label:'Active Workers' },
@@ -270,9 +272,25 @@ async function loadDashboard() {
           : `<div style="text-align:center;padding:3rem;color:var(--muted);font-size:.82rem;">No AI prediction data yet.</div>`}
       </div>
       <div class="card">
-        <div style="font-weight:700;font-size:1rem;margin-bottom:.15rem;">Production Costs</div>
-        <div style="font-size:.75rem;color:var(--muted);margin-bottom:1rem;">Monthly cost breakdown (PHP)</div>
-        <canvas id="costChart" height="140"></canvas>
+        <div style="font-weight:700;font-size:1rem;margin-bottom:.15rem;">CRM Contacts</div>
+        <div style="font-size:.75rem;color:var(--muted);margin-bottom:1rem;">Buyers · Suppliers · Partners</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin-bottom:.85rem;">
+          <div style="background:#eff6ff;border-radius:8px;padding:.5rem;text-align:center;">
+            <div style="font-size:1.1rem;font-weight:700;color:#3b82f6;">${crmBuyers}</div>
+            <div style="font-size:.65rem;color:var(--muted);margin-top:.1rem;">Buyers</div>
+          </div>
+          <div style="background:#f0fdf4;border-radius:8px;padding:.5rem;text-align:center;">
+            <div style="font-size:1.1rem;font-weight:700;color:#22c55e;">${crmSuppliers}</div>
+            <div style="font-size:.65rem;color:var(--muted);margin-top:.1rem;">Suppliers</div>
+          </div>
+          <div style="background:#faf5ff;border-radius:8px;padding:.5rem;text-align:center;">
+            <div style="font-size:1.1rem;font-weight:700;color:#8b5cf6;">${crmPartners}</div>
+            <div style="font-size:.65rem;color:var(--muted);margin-top:.1rem;">Partners</div>
+          </div>
+        </div>
+        ${crm.length
+          ? `<canvas id="crmChart" height="110"></canvas>`
+          : `<div style="text-align:center;padding:2rem;color:var(--muted);font-size:.82rem;">No CRM contacts yet.</div>`}
       </div>
     </div>
 
@@ -438,7 +456,7 @@ async function loadDashboard() {
   `;
 
   // ── CHARTS ───────────────────────────────────────────────────
-  const cropColors = { Rice:'#22c55e', Corn:'#3b82f6', Vegetables:'#f59e0b' };
+  const cropColors  = { Rice:'#22c55e', Corn:'#3b82f6', Vegetables:'#f59e0b' };
   const extraColors = ['#8b5cf6','#ef4444','#f97316'];
 
   // Chart 1: Yield Trends (actual vs simple target)
@@ -463,23 +481,28 @@ async function loadDashboard() {
     });
   }
 
-  // Chart 2: Production Costs (static fallback — no table exists)
-  if (document.getElementById('costChart')) {
-    new Chart(document.getElementById('costChart'), {
-      type:'bar',
-      data:{
-        labels: vm.slice(0, 6),
-        datasets:[
-          { label:'Equipment', data:[4500,4200,3800,3200,4000,4800].slice(0,vm.length), backgroundColor:'#f59e0b', borderRadius:3, borderSkipped:false },
-          { label:'Labor',     data:[12000,13000,14000,12000,12500,16000].slice(0,vm.length), backgroundColor:'#2D5A27', borderRadius:3, borderSkipped:false },
-          { label:'Seeds',     data:[8000,9500,8500,7500,7800,8200].slice(0,vm.length), backgroundColor:'#3b82f6', borderRadius:3, borderSkipped:false },
+  // Chart 2: CRM Contacts by type (monthly)
+  if (crm.length && document.getElementById('crmChart')) {
+    const crmMonthly = { Buyer: new Array(12).fill(0), Supplier: new Array(12).fill(0), Partner: new Array(12).fill(0) };
+    crm.forEach(c => {
+      const m = new Date(c.created_at).getMonth();
+      if (crmMonthly[c.type] !== undefined) crmMonthly[c.type][m]++;
+    });
+    new Chart(document.getElementById('crmChart'), {
+      type: 'bar',
+      data: {
+        labels: vm,
+        datasets: [
+          { label:'Buyers',    data: crmMonthly.Buyer.slice(0,vm.length),    backgroundColor:'#3b82f6', borderRadius:4, borderSkipped:false },
+          { label:'Suppliers', data: crmMonthly.Supplier.slice(0,vm.length), backgroundColor:'#22c55e', borderRadius:4, borderSkipped:false },
+          { label:'Partners',  data: crmMonthly.Partner.slice(0,vm.length),  backgroundColor:'#8b5cf6', borderRadius:4, borderSkipped:false },
         ]
       },
-      options:{ plugins:{ legend:{ labels:{ font:cf, boxWidth:12, padding:14 }}, tooltip:tip }, scales:{ x:{ grid:{ display:false }, ticks:{ font:cf }}, y:{ grid:{ color:'#f3f4f6' }, ticks:{ font:cf }}}, responsive:true }
+      options:{ plugins:{ legend:{ labels:{ font:cf, boxWidth:12, padding:14 }}, tooltip:tip }, scales:{ x:{ grid:{ display:false }, ticks:{ font:cf }}, y:{ grid:{ color:'#f3f4f6' }, ticks:{ font:cf, stepSize:1 }}}, responsive:true }
     });
   }
 
-  // Chart 3: Task Completion Rate
+  // Chart 3: Task Completion Rate — grouped bars
   if (tasks.length && document.getElementById('taskCompChart')) {
     new Chart(document.getElementById('taskCompChart'), {
       type:'bar',
@@ -490,11 +513,15 @@ async function loadDashboard() {
           { label:'Pending',   data:taskMonthly.pending.slice(0,vm.length),   backgroundColor:'#fbbf24', borderRadius:4, borderSkipped:false },
         ]
       },
-      options:{ plugins:{ legend:{ labels:{ font:cf, boxWidth:12, padding:12 }}, tooltip:tip }, scales:{ x:{ grid:{ display:false }, ticks:{ font:cf }, stacked:true }, y:{ grid:{ color:'#f3f4f6' }, ticks:{ font:cf }, stacked:true }}, responsive:true }
+      options:{
+        plugins:{ legend:{ labels:{ font:cf, boxWidth:12, padding:12 }}, tooltip:tip },
+        scales:{ x:{ grid:{ display:false }, ticks:{ font:cf }}, y:{ grid:{ color:'#f3f4f6' }, ticks:{ font:cf }}},
+        responsive:true
+      }
     });
   }
 
-  // Chart 4: Worker Attendance
+  // Chart 4: Worker Attendance — grouped bars
   if (attend.length && document.getElementById('attendChart')) {
     new Chart(document.getElementById('attendChart'), {
       type:'bar',
@@ -508,7 +535,7 @@ async function loadDashboard() {
       },
       options:{
         plugins:{ legend:{ labels:{ font:cf, boxWidth:12, padding:12 }}, tooltip:{ ...tip, callbacks:{ label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y}%` }}},
-        scales:{ x:{ grid:{ display:false }, ticks:{ font:cf }, stacked:true }, y:{ grid:{ color:'#f3f4f6' }, ticks:{ font:cf, callback: v => v+'%' }, stacked:true, max:100 }},
+        scales:{ x:{ grid:{ display:false }, ticks:{ font:cf }}, y:{ grid:{ color:'#f3f4f6' }, ticks:{ font:cf, callback: v => v+'%' }, max:100 }},
         responsive:true
       }
     });
@@ -573,7 +600,7 @@ async function loadDashboard() {
   }
 
   // ── Real-time updates ────────────────────────────────────────
-  ['tasks','attendance','inventory_items','ai_predictions'].forEach(table => {
+  ['tasks','attendance','inventory_items','ai_predictions','crm_contacts'].forEach(table => {
     db.channel(`dashboard-${table}`)
       .on('postgres_changes', { event:'*', schema:'public', table }, () => loadDashboard())
       .subscribe();
