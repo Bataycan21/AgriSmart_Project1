@@ -24,7 +24,7 @@
     const d = new Date(r.dateKey + 'T00:00:00');
     return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
   });
-  const daysPresent = monthLogs.filter(r => r.status === 'present').length;
+  const daysPresent = monthLogs.filter(r => r.status === 'present' || r.status === 'late').length;
   const daysLate    = monthLogs.filter(r => r.status === 'late').length;
   const daysAbsent  = monthLogs.filter(r => r.status === 'absent').length;
 
