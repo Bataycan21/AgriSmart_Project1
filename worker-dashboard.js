@@ -64,30 +64,51 @@
   const completedTasks = TASKS.filter(t =>  t.completed);
   const newTasks       = TASKS.filter(t => !t.completed && t.isNew);
 
-  // ── 3. E-LEARNING (Supabase) ──────────────────────────────────
-  const COURSES = [
-    { id:1, title:'Soil Health Assessment Fundamentals',   tag:'Soil Science',     tagColor:'#2D5A27' },
-    { id:2, title:'Organic Farming Techniques',            tag:'Farming Methods',  tagColor:'#f59e0b' },
-    { id:3, title:'Irrigation Systems & Water Management', tag:'Water Management', tagColor:'#3b82f6' },
-    { id:4, title:'Pest & Disease Identification',         tag:'Crop Protection',  tagColor:'#ef4444' },
-    { id:5, title:'Sustainable Agriculture Practices',     tag:'Sustainability',   tagColor:'#22c55e' },
-    { id:6, title:'Farm Equipment Safety & Maintenance',   tag:'Safety',           tagColor:'#f59e0b' },
-  ];
+  // ── 3. E-LEARNING — fetch modules + progress from Supabase ───
+  let COURSES = [];
+  let CP = {};
 
-  let CP = { 1:0, 2:0, 3:0, 4:0, 5:0, 6:0 };
   try {
-    if (session?.worker_id) {
-      const { data } = await window.db
-        .from('elearning_progress')
-        .select('module_id, progress')
-        .eq('worker_id', session.worker_id);
-      (data || []).forEach(r => { CP[r.module_id] = r.progress || 0; });
-    }
-  } catch(e) { console.warn('[Dashboard] elearning:', e.message); }
+    // Fetch all enabled modules (real IDs from DB)
+    const { data: modulesData, error: modulesError } = await window.db
+      .from('elearning_modules')
+      .select('id, tag, tag_color, accent, title, description, hours, modules')
+      .eq('enabled', true)
+      .order('id');
 
-  const completedModules  = COURSES.filter(c => (CP[c.id]||0) >= 100);
-  const inProgressModules = COURSES.filter(c => (CP[c.id]||0) > 0 && (CP[c.id]||0) < 100);
-  const notStarted        = COURSES.filter(c => (CP[c.id]||0) === 0);
+    if (modulesError) throw modulesError;
+
+    COURSES = (modulesData || []).map(row => ({
+      id:       row.id,
+      tag:      row.tag,
+      tagColor: row.tag_color || '#2D5A27',
+      accent:   row.accent    || '#2D5A27',
+      title:    row.title,
+    }));
+
+    // Initialize all to 0%
+    COURSES.forEach(c => { CP[c.id] = 0; });
+
+    // Fetch this worker's progress
+    if (session?.worker_id) {
+      const { data: progressData, error: progressError } = await window.db
+        .from('elearning_progress')
+        .select('module_id, progress, completed')
+        .eq('worker_id', session.worker_id);
+
+      if (progressError) throw progressError;
+
+      (progressData || []).forEach(r => {
+        CP[r.module_id] = r.progress || 0;
+      });
+    }
+  } catch(e) {
+    console.warn('[Dashboard] elearning:', e.message);
+  }
+
+  const completedModules  = COURSES.filter(c => (CP[c.id] || 0) >= 100);
+  const inProgressModules = COURSES.filter(c => (CP[c.id] || 0) > 0 && (CP[c.id] || 0) < 100);
+  const notStarted        = COURSES.filter(c => (CP[c.id] || 0) === 0);
   const newModules        = notStarted;
   const pendingModules    = inProgressModules;
 
@@ -369,7 +390,7 @@
             <span style="font-weight:700;color:var(--green-dark);">${completedModules.length} / ${COURSES.length} modules</span>
           </div>
           <div style="height:8px;background:#f3f4f6;border-radius:999px;overflow:hidden;">
-            <div style="height:100%;width:${Math.round((completedModules.length/COURSES.length)*100)}%;background:linear-gradient(90deg,#2D5A27,#22c55e);border-radius:999px;transition:width .6s ease;"></div>
+            <div style="height:100%;width:${COURSES.length ? Math.round((completedModules.length/COURSES.length)*100) : 0}%;background:linear-gradient(90deg,#2D5A27,#22c55e);border-radius:999px;transition:width .6s ease;"></div>
           </div>
         </div>
 
