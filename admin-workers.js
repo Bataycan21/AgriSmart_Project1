@@ -250,7 +250,7 @@ document.addEventListener('DOMContentLoaded', async function () {
   function renderAttendModal() {
     const w        = attendModal;
     const rows     = attendRows;
-    const presentN = rows.filter(r => r.status === 'present').length;
+    const presentN = rows.filter(r => r.status === 'present' || r.status === 'late').length;
     const lateN    = rows.filter(r => r.status === 'late').length;
     const absentN  = rows.filter(r => r.status === 'absent').length;
     const rate     = rows.length ? Math.round(((presentN + lateN) / rows.length) * 100) : 0;
