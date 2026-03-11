@@ -366,12 +366,7 @@ MODULES: <number of modules e.g. "6 modules">`;
 
   // ── MAIN RENDER ────────────────────────────────────────────
   function render() {
-    const visibleCourses = courses.filter(c =>
-      elFilter === 'All'          ? true :
-      elFilter === 'In Progress'  ? getStatus(c.id) === 'in-progress' :
-      elFilter === 'Completed'    ? getStatus(c.id) === 'completed'   :
-      getStatus(c.id) === 'not-started'
-    );
+    const visibleCourses = courses; // Admin sees all courses in preview, no progress filtering
     const completed  = courses.filter(c => getStatus(c.id) === 'completed').length;
     const inProgress = courses.filter(c => getStatus(c.id) === 'in-progress').length;
     const total      = courses.length;
@@ -433,7 +428,7 @@ MODULES: <number of modules e.g. "6 modules">`;
           <span style="font-size:.75rem;font-weight:600;color:#2D5A27;">Powered by Gemini AI — lessons generated fresh for every session</span>
         </div>
         <div style="display:flex;gap:.5rem;margin-bottom:1.25rem;">
-          ${['All','In Progress','Completed','Not Started'].map(filterBtn).join('')}
+          ${['All'].map(filterBtn).join('')}
         </div>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;">
           ${visibleCourses.map(c => {
@@ -456,14 +451,10 @@ MODULES: <number of modules e.g. "6 modules">`;
                     <span>${c.hours}</span><span>${c.modules}</span>
                     <span style="color:#2D5A27;font-weight:600;">⚡ AI</span>
                   </div>
-                  <div class="progress-wrap" style="margin-bottom:.85rem;">
-                    <div class="progress-label"><span>Progress</span><span id="pct-${c.id}">${p}%</span></div>
-                    <div class="progress-bar"><div id="bar-${c.id}" class="progress-fill" style="width:${p}%;background:${c.accent};transition:width .4s ease;"></div></div>
-                  </div>
-                  <button class="btn ${status==='completed'?'btn-ghost':status==='in-progress'?'btn-primary':'btn-outline'}"
-                    style="width:100%;justify-content:center;${status==='in-progress'?`background:${c.accent};`:''}"
+                  <button class="btn btn-outline"
+                    style="width:100%;justify-content:center;"
                     onclick="EL.openModule(${c.id})" ${!c.enabled?'disabled':''}>
-                    ${status==='completed'?'Review Course &nbsp;›':status==='in-progress'?'Continue &nbsp;▷':'Start Course &nbsp;▷'}
+                    View Course &nbsp;›
                   </button>
                 </div>
               </div>`;
