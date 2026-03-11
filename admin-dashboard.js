@@ -49,6 +49,9 @@ function buildAttendPercents(rows) {
   rows.forEach(r => {
     const m = new Date(r.date + 'T00:00:00').getMonth();
     buckets[m][r.status] = (buckets[m][r.status]||0) + 1;
+    if (r.status === 'late') {
+    buckets[m].present = (buckets[m].present||0) + 1;
+    }
     buckets[m].total++;
   });
   return {
