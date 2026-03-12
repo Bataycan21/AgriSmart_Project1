@@ -6,19 +6,35 @@ const AttendanceStore = (() => {
 
   const CUTOFF_KEY = 'agrismart_attendance_cutoff';
 
-  // ── Helpers: get current worker_id by looking up workers table ─
+  // ── Get current worker_id ──────────────────────────────────
   async function getWorkerId() {
     const session = Auth.getSession();
-    if (!session?.id) return null;
+    if (!session) return null;
 
-    const { data, error } = await window.db
-      .from('workers')
-      .select('id')
-      .eq('user_id', session.id)
-      .maybeSingle();
+    // Try session.worker_id first (fastest)
+    if (session.worker_id) return session.worker_id;
 
-    if (error || !data) return null;
-    return data.id;
+    // Fallback: look up from users table by email
+    if (session.email) {
+      const { data } = await window.db
+        .from('users')
+        .select('worker_id')
+        .eq('email', session.email)
+        .maybeSingle();
+      if (data?.worker_id) return data.worker_id;
+    }
+
+    // Last fallback: look up from workers table by name
+    if (session.name) {
+      const { data } = await window.db
+        .from('workers')
+        .select('id')
+        .eq('name', session.name)
+        .maybeSingle();
+      if (data?.id) return data.id;
+    }
+
+    return null;
   }
 
   // ── Cutoff time (kept in localStorage per device) ──────────
@@ -50,8 +66,6 @@ const AttendanceStore = (() => {
     const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
     return days[date.getDay()];
   }
-
-  // ── Convert HH:MM:SS → HH:MM AM/PM for display ─────────────
   function formatDbTime(timeStr) {
     let [h, m] = timeStr.split(':').map(Number);
     const ampm = h >= 12 ? 'PM' : 'AM';
@@ -81,13 +95,30 @@ const AttendanceStore = (() => {
     return `${Math.floor(diff / 60)}h ${String(diff % 60).padStart(2,'0')}m`;
   }
 
-  // ── Convert HH:MM AM/PM → HH:MM:SS for Supabase time field ─
+  // ── Convert HH:MM AM/PM → HH:MM:SS for Supabase ───────────
   function toDbTime(str) {
     const [time, ampm] = str.split(' ');
     let [h, m] = time.split(':').map(Number);
     if (ampm === 'PM' && h !== 12) h += 12;
     if (ampm === 'AM' && h === 12) h = 0;
     return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00`;
+  }
+
+  // ── Map a DB row to UI shape ───────────────────────────────
+  function mapRow(row) {
+    return {
+      dateKey : row.date,
+      date    : formatDate(new Date(row.date + 'T00:00:00')),
+      day     : formatDay(new Date(row.date + 'T00:00:00')),
+      timeIn  : row.time_in  ? formatDbTime(row.time_in)  : '--',
+      timeOut : row.time_out ? formatDbTime(row.time_out) : '--',
+      total   : row.time_in && row.time_out
+                  ? calcTotalHours(formatDbTime(row.time_in), formatDbTime(row.time_out))
+                  : (row.time_in ? 'In progress' : '--'),
+      status  : row.status,
+      active  : !!(row.time_in && !row.time_out),
+      _id     : row.id,
+    };
   }
 
   // ── Get all logs for current worker ────────────────────────
@@ -100,47 +131,22 @@ const AttendanceStore = (() => {
       .eq('worker_id', workerId)
       .order('date', { ascending: false });
     if (error) { console.error('[AttendanceStore] getLogs:', error.message); return []; }
-    return (data || []).map(row => ({
-      dateKey : row.date,
-      date    : formatDate(new Date(row.date + 'T00:00:00')),
-      day     : formatDay(new Date(row.date + 'T00:00:00')),
-      timeIn  : row.time_in  ? formatDbTime(row.time_in)  : '--',
-      timeOut : row.time_out ? formatDbTime(row.time_out) : '--',
-      total   : row.time_in && row.time_out
-                  ? calcTotalHours(formatDbTime(row.time_in), formatDbTime(row.time_out))
-                  : (row.time_in ? 'In progress' : '--'),
-      status  : row.status,
-      active  : row.time_in && !row.time_out,
-      _id     : row.id,
-    }));
+    return (data || []).map(mapRow);
   }
 
   // ── Get today's log for current worker ─────────────────────
   async function getTodayLog() {
     const workerId = await getWorkerId();
     if (!workerId) return null;
-    const today = getTodayKey();
     const { data, error } = await window.db
       .from('attendance')
       .select('*')
       .eq('worker_id', workerId)
-      .eq('date', today)
+      .eq('date', getTodayKey())
       .maybeSingle();
     if (error) { console.error('[AttendanceStore] getTodayLog:', error.message); return null; }
     if (!data) return null;
-    return {
-      dateKey : data.date,
-      date    : formatDate(new Date(data.date + 'T00:00:00')),
-      day     : formatDay(new Date(data.date + 'T00:00:00')),
-      timeIn  : data.time_in  ? formatDbTime(data.time_in)  : '--',
-      timeOut : data.time_out ? formatDbTime(data.time_out) : '--',
-      total   : data.time_in && data.time_out
-                  ? calcTotalHours(formatDbTime(data.time_in), formatDbTime(data.time_out))
-                  : (data.time_in ? 'In progress' : '--'),
-      status  : data.status,
-      active  : !!(data.time_in && !data.time_out),
-      _id     : data.id,
-    };
+    return mapRow(data);
   }
 
   // ── Time In ────────────────────────────────────────────────
@@ -148,12 +154,12 @@ const AttendanceStore = (() => {
     const workerId = await getWorkerId();
     if (!workerId) return { success: false, error: 'No worker profile found. Please contact admin.' };
 
-    const today    = getTodayKey();
     const existing = await getTodayLog();
     if (existing) return { success: false, error: 'Already timed in today.' };
 
     const now    = new Date();
     const status = calcStatus(now);
+    const today  = getTodayKey();
 
     const { data, error } = await window.db
       .from('attendance')
