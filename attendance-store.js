@@ -6,10 +6,19 @@ const AttendanceStore = (() => {
 
   const CUTOFF_KEY = 'agrismart_attendance_cutoff';
 
-  // ── Helpers: get current worker_id from session ────────────
-  function getWorkerId() {
+  // ── Helpers: get current worker_id by looking up workers table ─
+  async function getWorkerId() {
     const session = Auth.getSession();
-    return session?.worker_id || null;
+    if (!session?.id) return null;
+
+    const { data, error } = await window.db
+      .from('workers')
+      .select('id')
+      .eq('user_id', session.id)
+      .maybeSingle();
+
+    if (error || !data) return null;
+    return data.id;
   }
 
   // ── Cutoff time (kept in localStorage per device) ──────────
@@ -40,6 +49,14 @@ const AttendanceStore = (() => {
   function formatDay(date) {
     const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
     return days[date.getDay()];
+  }
+
+  // ── Convert HH:MM:SS → HH:MM AM/PM for display ─────────────
+  function formatDbTime(timeStr) {
+    let [h, m] = timeStr.split(':').map(Number);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')} ${ampm}`;
   }
 
   // ── Status logic ───────────────────────────────────────────
@@ -75,7 +92,7 @@ const AttendanceStore = (() => {
 
   // ── Get all logs for current worker ────────────────────────
   async function getLogs() {
-    const workerId = getWorkerId();
+    const workerId = await getWorkerId();
     if (!workerId) return [];
     const { data, error } = await window.db
       .from('attendance')
@@ -83,7 +100,6 @@ const AttendanceStore = (() => {
       .eq('worker_id', workerId)
       .order('date', { ascending: false });
     if (error) { console.error('[AttendanceStore] getLogs:', error.message); return []; }
-    // Map DB rows to the shape the UI expects
     return (data || []).map(row => ({
       dateKey : row.date,
       date    : formatDate(new Date(row.date + 'T00:00:00')),
@@ -99,17 +115,9 @@ const AttendanceStore = (() => {
     }));
   }
 
-  // ── Convert HH:MM:SS → HH:MM AM/PM for display ─────────────
-  function formatDbTime(timeStr) {
-    let [h, m] = timeStr.split(':').map(Number);
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    h = h % 12 || 12;
-    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')} ${ampm}`;
-  }
-
   // ── Get today's log for current worker ─────────────────────
   async function getTodayLog() {
-    const workerId = getWorkerId();
+    const workerId = await getWorkerId();
     if (!workerId) return null;
     const today = getTodayKey();
     const { data, error } = await window.db
@@ -137,11 +145,10 @@ const AttendanceStore = (() => {
 
   // ── Time In ────────────────────────────────────────────────
   async function timeIn() {
-    const workerId = getWorkerId();
+    const workerId = await getWorkerId();
     if (!workerId) return { success: false, error: 'No worker profile found. Please contact admin.' };
 
-    const today = getTodayKey();
-    // Check for existing record
+    const today    = getTodayKey();
     const existing = await getTodayLog();
     if (existing) return { success: false, error: 'Already timed in today.' };
 
@@ -161,28 +168,30 @@ const AttendanceStore = (() => {
 
     if (error) return { success: false, error: error.message };
 
-    const entry = {
-      dateKey : today,
-      date    : formatDate(now),
-      day     : formatDay(now),
-      timeIn  : formatTime(now),
-      timeOut : '--',
-      total   : 'In progress',
-      status,
-      active  : true,
-      _id     : data.id,
+    return {
+      success: true,
+      entry: {
+        dateKey : today,
+        date    : formatDate(now),
+        day     : formatDay(now),
+        timeIn  : formatTime(now),
+        timeOut : '--',
+        total   : 'In progress',
+        status,
+        active  : true,
+        _id     : data.id,
+      }
     };
-    return { success: true, entry };
   }
 
   // ── Time Out ───────────────────────────────────────────────
   async function timeOut() {
-    const workerId = getWorkerId();
+    const workerId = await getWorkerId();
     if (!workerId) return { success: false, error: 'No worker profile found.' };
 
     const todayLog = await getTodayLog();
-    if (!todayLog)          return { success: false, error: 'No time-in record found for today.' };
-    if (!todayLog.active)   return { success: false, error: 'Already timed out today.' };
+    if (!todayLog)        return { success: false, error: 'No time-in record found for today.' };
+    if (!todayLog.active) return { success: false, error: 'Already timed out today.' };
 
     const now        = new Date();
     const timeOutStr = formatTime(now);
@@ -198,11 +207,10 @@ const AttendanceStore = (() => {
 
     if (error) return { success: false, error: error.message };
 
-    const entry = { ...todayLog, timeOut: timeOutStr, total, active: false };
-    return { success: true, entry };
+    return { success: true, entry: { ...todayLog, timeOut: timeOutStr, total, active: false } };
   }
 
-  // ── State checkers (async) ─────────────────────────────────
+  // ── State checkers ─────────────────────────────────────────
   async function isTimedInToday()  { const l = await getTodayLog(); return l ?  l.active : false; }
   async function isTimedOutToday() { const l = await getTodayLog(); return l ? !l.active : false; }
 
