@@ -369,7 +369,10 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     setSearch(val)       { ySearch = val; render(); },
     setFilter(val)       { filterSeason = val; render(); },
-    setFormVal(key, val) { form[key] = val; },
+    setFormVal(key, val) {
+      form[key] = val;
+      if (key === 'yield_unit') render();
+    },
 
     openAdd() {
       editId = null;
