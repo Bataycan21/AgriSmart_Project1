@@ -49,16 +49,6 @@
     }
   } catch(e) { console.warn('[Dashboard] tasks:', e.message); }
 
-  if (!TASKS.length) {
-    TASKS = [
-      { id:1, priority:'High',   completed:false, title:'Irrigate Rice Paddies – Section A',  due:'Mar 5, 2026',  isNew:true  },
-      { id:2, priority:'Medium', completed:true,  title:'Apply Fertilizer to Corn Fields',    due:'Mar 4, 2026',  isNew:false },
-      { id:3, priority:'Low',    completed:false, title:'Check Pest Traps',                   due:'Mar 5, 2026',  isNew:true  },
-      { id:4, priority:'High',   completed:false, title:'Harvest Ripe Tomatoes',              due:'Mar 6, 2026',  isNew:false },
-      { id:5, priority:'Medium', completed:true,  title:'Equipment Maintenance Check',        due:'Mar 3, 2026',  isNew:false },
-      { id:6, priority:'Medium', completed:false, title:'Soil Sample Collection',             due:'Mar 7, 2026',  isNew:false },
-    ];
-  }
 
   const pendingTasks   = TASKS.filter(t => !t.completed);
   const completedTasks = TASKS.filter(t =>  t.completed);
