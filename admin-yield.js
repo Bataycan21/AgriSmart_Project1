@@ -17,7 +17,6 @@ document.addEventListener('DOMContentLoaded', async function () {
   let editId       = null;
   let form         = { crop_type:'', yield_value:'', yield_unit:'tons', harvest_date:'', location:'', season:'', notes:'' };
 
-  const CROPS   = ['Rice','Corn','Wheat','Vegetables','Tomatoes','Sugarcane','Banana','Coconut','Other'];
   const SEASONS = ['Dry Season','Wet Season','Year-round','Off-Season'];
   const UNITS   = ['tons','kg'];
 
@@ -257,23 +256,19 @@ document.addEventListener('DOMContentLoaded', async function () {
 
           <div style="display:flex;flex-direction:column;gap:1rem;">
 
+            <!-- Crop Type — free text input -->
             <div>
-              <label style="font-size:.8rem;font-weight:600;display:block;margin-bottom:.5rem;">
+              <label style="font-size:.8rem;font-weight:600;display:block;margin-bottom:.4rem;">
                 Crop Type <span style="color:var(--red);">*</span>
               </label>
-              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.4rem;">
-                ${CROPS.map(c => `
-                  <button onclick="YM.setFormCrop('${c}')"
-                    style="padding:.45rem .3rem;border-radius:8px;font-family:'Poppins',sans-serif;font-size:.7rem;font-weight:600;
-                           cursor:pointer;text-align:center;transition:all .15s;
-                           border:1.5px solid ${form.crop_type===c?'var(--green-dark)':'var(--border)'};
-                           background:${form.crop_type===c?'var(--green-light)':'white'};
-                           color:${form.crop_type===c?'var(--green-dark)':'var(--muted)'};">
-                    <div style="font-size:1rem;margin-bottom:.1rem;">${CROP_ICONS[c]||'🌱'}</div>${c}
-                  </button>`).join('')}
-              </div>
+              <input id="yf_crop" type="text" value="${form.crop_type}"
+                oninput="YM.setFormVal('crop_type',this.value)"
+                placeholder="e.g. Rice, Corn, Tomatoes, Sugarcane..."
+                style="width:100%;padding:.6rem .75rem;border:1.5px solid var(--border);border-radius:8px;
+                       font-family:'Poppins',sans-serif;font-size:.82rem;outline:none;box-sizing:border-box;background:#f9fafb;"/>
             </div>
 
+            <!-- Yield Amount + Unit -->
             <div style="display:grid;grid-template-columns:1fr auto;gap:.65rem;align-items:end;">
               <div>
                 <label style="font-size:.8rem;font-weight:600;display:block;margin-bottom:.4rem;">
@@ -298,6 +293,7 @@ document.addEventListener('DOMContentLoaded', async function () {
               </div>
             </div>
 
+            <!-- Harvest Date -->
             <div>
               <label style="font-size:.8rem;font-weight:600;display:block;margin-bottom:.4rem;">
                 Harvest Date <span style="color:var(--red);">*</span>
@@ -308,6 +304,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                        font-family:'Poppins',sans-serif;font-size:.82rem;outline:none;box-sizing:border-box;background:#f9fafb;"/>
             </div>
 
+            <!-- Location -->
             <div>
               <label style="font-size:.8rem;font-weight:600;display:block;margin-bottom:.4rem;">Location / Field</label>
               <input id="yf_location" type="text" value="${form.location}"
@@ -316,6 +313,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                        font-family:'Poppins',sans-serif;font-size:.82rem;outline:none;box-sizing:border-box;background:#f9fafb;"/>
             </div>
 
+            <!-- Season -->
             <div>
               <label style="font-size:.8rem;font-weight:600;display:block;margin-bottom:.4rem;">Season</label>
               <div style="position:relative;">
@@ -332,6 +330,7 @@ document.addEventListener('DOMContentLoaded', async function () {
               </div>
             </div>
 
+            <!-- Notes -->
             <div>
               <label style="font-size:.8rem;font-weight:600;display:block;margin-bottom:.4rem;">Notes</label>
               <textarea id="yf_notes" rows="2"
@@ -342,6 +341,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                        background:#f9fafb;resize:vertical;">${form.notes}</textarea>
             </div>
 
+            <!-- Buttons -->
             <div style="display:flex;justify-content:flex-end;gap:.7rem;margin-top:.25rem;">
               <button onclick="YM.closeModal()"
                 style="background:transparent;color:var(--muted);border:1.5px solid var(--border);
@@ -369,7 +369,6 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     setSearch(val)       { ySearch = val; render(); },
     setFilter(val)       { filterSeason = val; render(); },
-    setFormCrop(c)       { form.crop_type = c; render(); },
     setFormVal(key, val) { form[key] = val; },
 
     openAdd() {
@@ -403,6 +402,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     },
 
     async saveRecord() {
+      form.crop_type    = document.getElementById('yf_crop')?.value     || form.crop_type;
       form.yield_value  = document.getElementById('yf_value')?.value    || form.yield_value;
       form.harvest_date = document.getElementById('yf_date')?.value     || form.harvest_date;
       form.location     = document.getElementById('yf_location')?.value || form.location;
