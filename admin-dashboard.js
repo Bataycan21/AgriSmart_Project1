@@ -28,7 +28,7 @@ const statIcons = {
   'Total Crops':     `<path d="M17 8C8 10 5.9 16.17 3.82 21.34L5.71 22l1-2.3A4.49 4.49 0 0 0 8 20C19 20 22 3 22 3c-1 2-8 2-8 2"/>`,
   'Inventory Items': `<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>`,
   'Active Workers':  `<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>`,
-  'Predicted Yield': `<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>`,
+  'Total Yield':     `<path d="M17 8C8 10 5.9 16.17 3.82 21.34L5.71 22l1-2.3A4.49 4.49 0 0 0 8 20C19 20 22 3 22 3c-1 2-8 2-8 2"/><path d="M4 22l2-2"/><path d="M8 18l2-2"/>`,
   'Total Tasks':     `<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>`,
 };
 
@@ -50,7 +50,6 @@ function buildAttendPercents(rows) {
   rows.forEach(r => {
     const m = new Date(r.date + 'T00:00:00').getMonth();
     buckets[m][r.status] = (buckets[m][r.status]||0) + 1;
-    // Late workers are also present — count them in both
     if (r.status === 'late') {
       buckets[m].present = (buckets[m].present||0) + 1;
     }
@@ -73,25 +72,46 @@ function buildTaskMonthly(rows) {
   return { completed, pending };
 }
 
-function buildYieldByCrop(rows) {
-  const crops = {};
-  rows.forEach(y => {
-    if (!crops[y.crop]) crops[y.crop] = new Array(12).fill(0);
-    const m = new Date(y.created_at).getMonth();
-    crops[y.crop][m] += Math.round((y.per_ha_yield||0) * (y.land_area||1) * 1000);
-  });
-  // forward-fill
-  Object.keys(crops).forEach(c => {
-    let last = 0;
-    crops[c] = crops[c].map(v => { if (v>0) last=v; return v>0?v:last; });
-  });
-  return crops;
-}
-
 // visible months up to current
 function visMonths() {
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   return MONTHS.slice(0, new Date().getMonth() + 1);
+}
+
+// ── YIELD HELPERS ────────────────────────────────────────────────
+const toKg = r => r.yield_unit === 'tons' ? r.yield_value * 1000 : r.yield_value;
+
+function computeYieldStats(yieldRecs) {
+  if (!yieldRecs.length) return { totalVal:'0 T', totalKg:0, topCrop:'—', recordCount:0 };
+  const totalKg = yieldRecs.reduce((s, r) => s + toKg(r), 0);
+  const totalVal = totalKg >= 1000
+    ? (totalKg / 1000).toFixed(1) + ' T'
+    : totalKg.toFixed(0) + ' kg';
+  const cropMap = {};
+  yieldRecs.forEach(r => { cropMap[r.crop_type] = (cropMap[r.crop_type]||0) + toKg(r); });
+  const topCrop = Object.entries(cropMap).sort((a,b)=>b[1]-a[1])[0]?.[0] || '—';
+  return { totalVal, totalKg, topCrop, recordCount: yieldRecs.length };
+}
+
+function buildYieldMonthly(yieldRecs) {
+  const byMonth = new Array(12).fill(0);
+  yieldRecs.forEach(r => {
+    if (!r.harvest_date) return;
+    const m = new Date(r.harvest_date + 'T00:00:00').getMonth();
+    byMonth[m] += toKg(r);
+  });
+  return byMonth;
+}
+
+function buildYieldByCrop(yieldRecs) {
+  const crops = {};
+  yieldRecs.forEach(r => {
+    if (!crops[r.crop_type]) crops[r.crop_type] = new Array(12).fill(0);
+    if (!r.harvest_date) return;
+    const m = new Date(r.harvest_date + 'T00:00:00').getMonth();
+    crops[r.crop_type][m] += toKg(r);
+  });
+  return crops;
 }
 
 // ── MAIN INIT ────────────────────────────────────────────────────
@@ -113,41 +133,43 @@ async function loadDashboard() {
   const [
     { data: invRows },
     { data: workerRows },
-    { data: predRows },
     { data: taskRows },
     { data: taskTodayRows },
     { data: attendRows },
     { data: crmRows },
+    { data: yieldRows },
   ] = await Promise.all([
     db.from('inventory_items').select('name, cat, qty, unit, status'),
     db.from('workers').select('id, name, status'),
-    db.from('ai_predictions').select('crop, per_ha_yield, land_area, created_at').gte('created_at', `${currentYear}-01-01`),
     db.from('tasks').select('title, worker, priority, status, completed, created_at, due_date, description').gte('created_at', `${currentYear}-01-01`),
     db.from('tasks').select('title, worker, priority, status, completed, due_date, time, progress_pct').eq('due_date', todayStr).order('time', { ascending: true }),
     db.from('attendance').select('status, date, worker_id').gte('date', `${currentYear}-01-01`),
     db.from('crm_contacts').select('type, stars, enabled, created_at'),
+    db.from('yield_records').select('yield_value, yield_unit, crop_type, harvest_date, location, season'),
   ]);
 
   const inventory  = invRows       || [];
   const workers    = workerRows    || [];
-  const preds      = predRows      || [];
   const tasks      = taskRows      || [];
   const todayTasks = taskTodayRows || [];
   const attend     = attendRows    || [];
   const crm        = crmRows       || [];
+  const yieldRecs  = yieldRows     || [];
 
   const vm = visMonths();
+
+  // ── Yield KPIs ───────────────────────────────────────────────
+  const yieldStats   = computeYieldStats(yieldRecs);
+  const yieldMonthly = buildYieldMonthly(yieldRecs);
+  const yieldByCrop  = buildYieldByCrop(yieldRecs);
+  const yieldCrops   = Object.keys(yieldByCrop);
 
   // ── Compute KPIs ────────────────────────────────────────────
   const activeWorkers  = workers.filter(w => w.status === 'active').length;
   const totalInv       = inventory.length;
-  const totalYield     = preds.reduce((s,p) => s + (p.per_ha_yield||0) * (p.land_area||1), 0);
-  const ytdYield       = preds.reduce((s,p) => s + (p.per_ha_yield||0) * (p.land_area||1), 0);
-
   const totalTasks     = tasks.length;
   const doneTasks      = tasks.filter(t => t.completed || t.status === 'completed').length;
   const compRate       = totalTasks ? Math.round((doneTasks/totalTasks)*100) : 0;
-
   const lowStock       = inventory.filter(i => i.status === 'low-stock').length;
   const outStock       = inventory.filter(i => i.status === 'out-of-stock').length;
 
@@ -160,8 +182,6 @@ async function loadDashboard() {
   const avgAbsent      = absentVals.length ? Math.round(absentVals.reduce((a,b)=>a+b,0)/absentVals.length) : 0;
 
   const taskMonthly    = buildTaskMonthly(tasks);
-  const yieldByCrop    = buildYieldByCrop(preds);
-  const crops          = Object.keys(yieldByCrop);
 
   const priorityCounts = { High:0, Medium:0, Low:0 };
   tasks.forEach(t => { if (priorityCounts[t.priority] !== undefined) priorityCounts[t.priority]++; });
@@ -171,7 +191,7 @@ async function loadDashboard() {
   const crmSuppliers = crm.filter(c => c.type === 'Supplier').length;
   const crmPartners  = crm.filter(c => c.type === 'Partner').length;
 
-  // ── Build recent activity from real task completions ────────
+  // ── Recent activity ──────────────────────────────────────────
   const recentCompleted = tasks
     .filter(t => t.completed || t.status === 'completed')
     .sort((a,b) => new Date(b.created_at) - new Date(a.created_at))
@@ -184,11 +204,9 @@ async function loadDashboard() {
     .map(i => ({ dot: i.status==='low-stock'?'#f59e0b':'#ef4444', text:`${i.status==='low-stock'?'Low':'Out of'} stock: ${i.name}`, time:'Now' }));
 
   const activity = [...lowStockItems, ...recentCompleted].slice(0, 6);
-
-  // fallback if empty
   if (!activity.length) activity.push({ dot:'#6b7280', text:'No recent activity yet.', time:'—' });
 
-  // ── Notifications from inventory ────────────────────────────
+  // ── Notifications ────────────────────────────────────────────
   const notifications = [
     ...inventory.filter(i => i.status === 'out-of-stock').map(i => ({
       urgent: true, stroke:'#ef4444', text:`Out of stock: ${i.name} (0 ${i.unit||'units'})`
@@ -200,14 +218,13 @@ async function loadDashboard() {
       urgent: false, stroke:'#3b82f6', text:`Overdue task: ${t.title} — ${t.worker||''}`
     }))),
   ].slice(0, 5);
-
   if (!notifications.length) notifications.push({ urgent:false, stroke:'#22c55e', text:'All systems looking good!' });
 
   // ── Stat cards ───────────────────────────────────────────────
   const statCards = [
     { bg:'#eff6ff', stroke:'#3b82f6', color:'blue',   trendColor:'#22c55e', trend:`${lowStock} low · ${outStock} out`, num: totalInv.toLocaleString(), label:'Inventory Items' },
     { bg:'#fff7ed', stroke:'#f59e0b', color:'orange', trendColor: activeWorkers > 0 ? '#22c55e':'#ef4444', trend:`${activeWorkers} of ${workers.length} active`, num: activeWorkers, label:'Active Workers' },
-    { bg:'#faf5ff', stroke:'#8b5cf6', color:'purple', trendColor:'#22c55e', trend:`${preds.length} predictions`, num: totalYield.toFixed(1)+'T', label:'Predicted Yield' },
+    { bg:'#f0fdf4', stroke:'#22c55e', color:'green',  trendColor:'#22c55e', trend:`${yieldStats.recordCount} records`, num: yieldStats.totalVal, label:'Total Yield' },
     { bg:'#f0fdf4', stroke:'#2D5A27', color:'',       trendColor: compRate >= 70 ? '#22c55e':'#ef4444', trend:`${compRate}% completion`, num: totalTasks, label:'Total Tasks' },
   ];
 
@@ -247,7 +264,7 @@ async function loadDashboard() {
     <p style="font-size:.68rem;font-weight:700;color:var(--muted);letter-spacing:.07em;text-transform:uppercase;margin:1.5rem 0 .6rem;">📊 Analytics Overview — Connected from All Modules</p>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.85rem;margin-bottom:1.5rem;">
       ${[
-        { icon:'🌾', bg:'#f0fdf4', valColor:'#2D5A27', val: preds.length ? ytdYield.toFixed(1)+' T' : '—', name:'Total Yield YTD',  sub:'From AI Predictions' },
+        { icon:'🌾', bg:'#f0fdf4', valColor:'#2D5A27', val: yieldRecs.length ? yieldStats.totalVal : '—', name:'Total Yield YTD', sub: yieldRecs.length ? `${yieldStats.recordCount} harvest records` : 'No yield data yet' },
         { icon:'✅', bg:'#f0fdf4', valColor:'#22c55e', val: totalTasks ? compRate+'%' : '—',             name:'Task Completion',  sub: totalTasks ? `${doneTasks} of ${totalTasks} tasks done` : 'No tasks yet' },
         { icon:'👷', bg:'#eff6ff', valColor:'#3b82f6', val: attend.length ? avgPresent+'%' : '—',        name:'Avg Attendance',   sub:'Across all workers' },
         { icon:'📦', bg:'#fffbeb', valColor:'#f59e0b', val: inventory.length ? lowStock+outStock : '—',  name:'Inventory Alerts', sub: inventory.length ? `${lowStock} low · ${outStock} out of stock` : 'No inventory data' },
@@ -282,7 +299,7 @@ async function loadDashboard() {
           </div>
         </div>
         ${crm.length
-          ? `<canvas id="crmChart" height="110"></canvas>`
+          ? `<canvas id="crmChart" height="80"></canvas>`
           : `<div style="text-align:center;padding:2rem;color:var(--muted);font-size:.82rem;">No CRM contacts yet.</div>`}
       </div>
     </div>
@@ -337,7 +354,14 @@ async function loadDashboard() {
     </div>
 
     <!-- CHARTS ROW 3 -->
-    <div style="display:grid;grid-template-columns:1fr;gap:1rem;margin-bottom:1rem;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;">
+      <div class="card">
+        <div style="font-weight:700;font-size:1rem;margin-bottom:.15rem;">Yield Over Time</div>
+        <div style="font-size:.75rem;color:var(--muted);margin-bottom:1rem;">Monthly harvest yield in kg · from Yield Management</div>
+        ${yieldRecs.length
+          ? `<canvas id="yieldTimeChart" height="130"></canvas>`
+          : `<div style="text-align:center;padding:3rem;color:var(--muted);font-size:.82rem;">No yield records yet. Add records in Yield Management.</div>`}
+      </div>
       <div class="card">
         <div style="font-weight:700;font-size:1rem;margin-bottom:.15rem;">Inventory Stock Health</div>
         <div style="font-size:.75rem;color:var(--muted);margin-bottom:1rem;">Current levels · 🟢 OK &nbsp;🟡 Low &nbsp;🔴 Out</div>
@@ -442,12 +466,10 @@ async function loadDashboard() {
   `;
 
   // ── CHARTS ───────────────────────────────────────────────────
-  const cropColors  = { Rice:'#22c55e', Corn:'#3b82f6', Vegetables:'#f59e0b' };
+  const cropColors  = { Rice:'#22c55e', Corn:'#3b82f6', Vegetables:'#f59e0b', Wheat:'#8b5cf6', Tomatoes:'#ef4444', Sugarcane:'#f97316', Banana:'#eab308', Coconut:'#14b8a6' };
   const extraColors = ['#8b5cf6','#ef4444','#f97316'];
 
-  // Chart 1: Yield Trends (actual vs simple target)
-
-  // Chart 2: CRM Contacts by type (monthly)
+  // Chart 1: CRM Contacts by type (monthly)
   if (crm.length && document.getElementById('crmChart')) {
     const crmMonthly = { Buyer: new Array(12).fill(0), Supplier: new Array(12).fill(0), Partner: new Array(12).fill(0) };
     crm.forEach(c => {
@@ -468,7 +490,7 @@ async function loadDashboard() {
     });
   }
 
-  // Chart 3: Task Completion Rate — grouped bars
+  // Chart 2: Task Completion Rate — grouped bars
   if (tasks.length && document.getElementById('taskCompChart')) {
     new Chart(document.getElementById('taskCompChart'), {
       type:'bar',
@@ -487,7 +509,7 @@ async function loadDashboard() {
     });
   }
 
-  // Chart 4: Worker Attendance — grouped bars
+  // Chart 3: Worker Attendance — grouped bars
   if (attend.length && document.getElementById('attendChart')) {
     new Chart(document.getElementById('attendChart'), {
       type:'bar',
@@ -507,9 +529,30 @@ async function loadDashboard() {
     });
   }
 
-  // Chart 5: Yield Over Time by crop
+  // Chart 4: Yield Over Time by crop — from yield_records
+  if (yieldRecs.length && document.getElementById('yieldTimeChart')) {
+    new Chart(document.getElementById('yieldTimeChart'), {
+      type:'line',
+      data:{
+        labels: vm,
+        datasets: yieldCrops.map((crop, i) => ({
+          label: crop,
+          data: yieldByCrop[crop].slice(0, vm.length),
+          borderColor: cropColors[crop] || extraColors[i % extraColors.length],
+          tension:.4, pointRadius:4,
+          pointBackgroundColor: cropColors[crop] || extraColors[i % extraColors.length],
+          borderWidth:2, fill:false,
+        }))
+      },
+      options:{
+        plugins:{ legend:{ labels:{ font:cf, boxWidth:16, padding:14 }}, tooltip:{ ...tip, callbacks:{ label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString()} kg` }}},
+        scales:{ x:{ grid:{ display:false }, ticks:{ font:cf }}, y:{ grid:{ color:'#f3f4f6' }, ticks:{ font:cf, callback: v => v>=1000?(v/1000).toFixed(1)+'k':v }}},
+        responsive:true
+      }
+    });
+  }
 
-  // Chart 6: Inventory Stock Health
+  // Chart 5: Inventory Stock Health
   if (inventory.length && document.getElementById('inventoryChart')) {
     new Chart(document.getElementById('inventoryChart'), {
       type:'bar',
@@ -528,7 +571,7 @@ async function loadDashboard() {
     });
   }
 
-  // Chart 7: Priority Doughnut
+  // Chart 6: Priority Doughnut
   if (document.getElementById('priorityChart')) {
     new Chart(document.getElementById('priorityChart'), {
       type:'doughnut',
@@ -545,7 +588,7 @@ async function loadDashboard() {
   }
 
   // ── Real-time updates ────────────────────────────────────────
-  ['tasks','attendance','inventory_items','crm_contacts'].forEach(table => {
+  ['tasks','attendance','inventory_items','crm_contacts','yield_records'].forEach(table => {
     db.channel(`dashboard-${table}`)
       .on('postgres_changes', { event:'*', schema:'public', table }, () => loadDashboard())
       .subscribe();
