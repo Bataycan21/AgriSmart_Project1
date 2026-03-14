@@ -545,7 +545,7 @@ async function loadDashboard() {
   }
 
   // ── Real-time updates ────────────────────────────────────────
-  ['tasks','attendance','inventory_items','ai_predictions','crm_contacts'].forEach(table => {
+  ['tasks','attendance','inventory_items','crm_contacts'].forEach(table => {
     db.channel(`dashboard-${table}`)
       .on('postgres_changes', { event:'*', schema:'public', table }, () => loadDashboard())
       .subscribe();
