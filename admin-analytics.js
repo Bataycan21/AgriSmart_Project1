@@ -49,19 +49,18 @@ function buildAttendData(attendance) {
   };
 }
 
-function buildYieldData(yields) {
-  const crops = [...new Set(yields.map(y => y.crop))];
+// ── Yield from yield_records ──────────────────────────────────────
+const toKg = r => r.yield_unit === 'tons' ? r.yield_value * 1000 : r.yield_value;
+
+function buildYieldData(yieldRecs) {
+  const crops = [...new Set(yieldRecs.map(r => r.crop_type))];
   const data = {};
   crops.forEach(c => data[c] = new Array(12).fill(0));
-  yields.forEach(y => {
-    const m = new Date(y.created_at).getMonth();
-    if (data[y.crop] !== undefined)
-      data[y.crop][m] += Math.round((y.per_ha_yield || 0) * (y.land_area || 1) * 1000);
-  });
-  // Forward-fill zeros for smooth lines
-  Object.keys(data).forEach(c => {
-    let last = 0;
-    data[c] = data[c].map(v => { if (v > 0) last = v; return v > 0 ? v : last; });
+  yieldRecs.forEach(r => {
+    if (!r.harvest_date) return;
+    const m = new Date(r.harvest_date + 'T00:00:00').getMonth();
+    if (data[r.crop_type] !== undefined)
+      data[r.crop_type][m] += toKg(r);
   });
   return data;
 }
@@ -80,18 +79,14 @@ function buildStockHealth(inventory) {
   };
 }
 
-// ── TRIM MONTHS to only show up to current month ──────────────────
 function getVisibleMonths() {
-  const now = new Date();
-  const m = now.getMonth(); // 0-indexed
-  return MONTHS.slice(0, m + 1);
+  return MONTHS.slice(0, new Date().getMonth() + 1);
 }
 
 // ── MAIN INIT ─────────────────────────────────────────────────────
 async function initAnalytics() {
   const db = window.db;
 
-  // Show loading state
   document.getElementById('pageContent').innerHTML = `
     <div style="display:flex;align-items:center;justify-content:center;height:60vh;color:var(--muted);font-size:.9rem;gap:.75rem;">
       <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="animation:spin 1s linear infinite;">
@@ -113,32 +108,32 @@ async function initAnalytics() {
     db.from('tasks').select('completed, priority, created_at, worker, worker_id').gte('created_at', `${currentYear}-01-01`),
     db.from('attendance').select('status, date').gte('date', `${currentYear}-01-01`),
     db.from('inventory_items').select('name, cat, qty, unit, status'),
-    db.from('ai_predictions').select('crop, per_ha_yield, land_area, created_at').gte('created_at', `${currentYear}-01-01`),
+    db.from('yield_records').select('yield_value, yield_unit, crop_type, harvest_date'),
     db.from('crm_contacts').select('id, enabled, stars, created_at'),
   ]);
 
   if (e1) console.error('[Analytics] tasks:', e1.message);
   if (e2) console.error('[Analytics] attendance:', e2.message);
   if (e3) console.error('[Analytics] inventory:', e3.message);
-  if (e4) console.error('[Analytics] ai_predictions:', e4.message);
+  if (e4) console.error('[Analytics] yield_records:', e4.message);
   if (e5) console.error('[Analytics] crm_contacts:', e5.message);
 
   const RAW = {
     tasks:      taskRows   || [],
     attendance: attendRows || [],
     inventory:  invRows    || [],
-    yields:     yieldRows  || [],
+    yieldRecs:  yieldRows  || [],
     crm:        crmRows    || [],
   };
 
   // ── Compute ───────────────────────────────────────────────────
   const visMonths    = getVisibleMonths();
-  const vm           = visMonths.length; // number of months to show
+  const vm           = visMonths.length;
 
   const taskMonthly  = buildTaskData(RAW.tasks);
   const priorityData = buildPriorityData(RAW.tasks);
   const attendData   = buildAttendData(RAW.attendance);
-  const yieldData    = buildYieldData(RAW.yields);
+  const yieldData    = buildYieldData(RAW.yieldRecs);
   const invCatData   = buildInvCatData(RAW.inventory);
   const stockHealth  = buildStockHealth(RAW.inventory);
 
@@ -147,12 +142,13 @@ async function initAnalytics() {
   const totalTasks   = totalDone + totalPending;
   const compRate     = totalTasks ? Math.round((totalDone/totalTasks)*100) : 0;
 
-  const presentVals  = attendData.present.slice(0, vm);
-  const avgAttend    = presentVals.length
-    ? Math.round(presentVals.reduce((a,b)=>a+b,0) / presentVals.filter(v=>v>0).length || 0)
-    : 0;
+  const presentVals  = attendData.present.slice(0, vm).filter(v => v > 0);
+  const avgAttend    = presentVals.length ? Math.round(presentVals.reduce((a,b)=>a+b,0) / presentVals.length) : 0;
 
-  const totalYieldKg = RAW.yields.reduce((s,y) => s + (y.per_ha_yield||0) * (y.land_area||1) * 1000, 0);
+  const totalYieldKg = RAW.yieldRecs.reduce((s, r) => s + toKg(r), 0);
+  const totalYieldVal = totalYieldKg >= 1000
+    ? (totalYieldKg / 1000).toFixed(1) + ' tons'
+    : totalYieldKg.toFixed(0) + ' kg';
 
   const crops = Object.keys(yieldData);
 
@@ -177,9 +173,9 @@ async function initAnalytics() {
     <!-- KPI Strip -->
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.85rem;margin-bottom:1.25rem;">
       ${[
-        { icon:'🌾', label:'Total Yield (YTD)',   value: RAW.yields.length ? (totalYieldKg/1000).toFixed(1)+' tons' : '—', sub:'From AI Predictions',                     color:'#2D5A27', bg:'#f0fdf4' },
-        { icon:'✅', label:'Task Completion Rate', value: totalTasks ? compRate+'%' : '—',                                  sub: totalTasks ? `${totalDone} of ${totalTasks} tasks done` : 'No tasks yet', color:'#22c55e', bg:'#f0fdf4' },
-        { icon:'👷', label:'Avg Attendance Rate',  value: RAW.attendance.length ? avgAttend+'%' : '—',                      sub:'Across all workers',                       color:'#3b82f6', bg:'#eff6ff' },
+        { icon:'🌾', label:'Total Yield (YTD)',   value: RAW.yieldRecs.length ? totalYieldVal : '—',         sub: RAW.yieldRecs.length ? `${RAW.yieldRecs.length} harvest records` : 'No yield data yet', color:'#2D5A27', bg:'#f0fdf4' },
+        { icon:'✅', label:'Task Completion Rate', value: totalTasks ? compRate+'%' : '—',                    sub: totalTasks ? `${totalDone} of ${totalTasks} tasks done` : 'No tasks yet',              color:'#22c55e', bg:'#f0fdf4' },
+        { icon:'👷', label:'Avg Attendance Rate',  value: RAW.attendance.length ? avgAttend+'%' : '—',        sub:'Across all workers',                                                                    color:'#3b82f6', bg:'#eff6ff' },
         { icon:'📦', label:'Inventory Alerts',     value: RAW.inventory.length ? stockHealth.lowStock+stockHealth.outOfStock : '—', sub: RAW.inventory.length ? `${stockHealth.lowStock} low · ${stockHealth.outOfStock} out of stock` : 'No inventory data', color:'#f59e0b', bg:'#fffbeb' },
       ].map(k=>`
         <div class="card" style="display:flex;align-items:center;gap:.85rem;padding:1rem 1.1rem;">
@@ -192,14 +188,14 @@ async function initAnalytics() {
         </div>`).join('')}
     </div>
 
-    <!-- Row 1: Yield + Resource Usage -->
+    <!-- Row 1: Yield Over Time + Resource Usage -->
     <div style="display:grid;grid-template-columns:1.6fr 1fr;gap:1rem;margin-bottom:1rem;">
       <div class="card">
         <div style="font-weight:700;font-size:1rem;margin-bottom:.1rem;">Yield Over Time</div>
-        <div style="font-size:.75rem;color:var(--muted);margin-bottom:1rem;">Monthly crop yield in kg · from AI Predictions</div>
-        ${RAW.yields.length
+        <div style="font-size:.75rem;color:var(--muted);margin-bottom:1rem;">Monthly harvest yield in kg · from Yield Management</div>
+        ${RAW.yieldRecs.length
           ? `<canvas id="yieldTimeChart" height="150"></canvas>`
-          : `<div style="text-align:center;padding:3rem 1rem;color:var(--muted);font-size:.82rem;">No AI prediction data yet.</div>`}
+          : `<div style="text-align:center;padding:3rem 1rem;color:var(--muted);font-size:.82rem;">No yield records yet. Add records in Yield Management.</div>`}
       </div>
       <div class="card">
         <div style="font-weight:700;font-size:1rem;margin-bottom:.1rem;">Resource Usage</div>
@@ -252,11 +248,11 @@ async function initAnalytics() {
             <div style="font-size:.65rem;color:var(--muted);margin-top:.1rem;">Avg Present</div>
           </div>
           <div style="background:#fffbeb;border-radius:8px;padding:.5rem;text-align:center;">
-            <div style="font-size:1.15rem;font-weight:700;color:#f59e0b;line-height:1;">${attendData.late.slice(0,vm).filter(v=>v>0).length ? Math.round(attendData.late.slice(0,vm).reduce((a,b)=>a+b,0)/vm) : 0}%</div>
+            <div style="font-size:1.15rem;font-weight:700;color:#f59e0b;line-height:1;">${Math.round(attendData.late.slice(0,vm).reduce((a,b)=>a+b,0)/Math.max(vm,1))}%</div>
             <div style="font-size:.65rem;color:var(--muted);margin-top:.1rem;">Avg Late</div>
           </div>
           <div style="background:#fef2f2;border-radius:8px;padding:.5rem;text-align:center;">
-            <div style="font-size:1.15rem;font-weight:700;color:#ef4444;line-height:1;">${Math.round(attendData.absent.slice(0,vm).reduce((a,b)=>a+b,0)/vm)}%</div>
+            <div style="font-size:1.15rem;font-weight:700;color:#ef4444;line-height:1;">${Math.round(attendData.absent.slice(0,vm).reduce((a,b)=>a+b,0)/Math.max(vm,1))}%</div>
             <div style="font-size:.65rem;color:var(--muted);margin-top:.1rem;">Avg Absent</div>
           </div>
         </div>
@@ -303,10 +299,10 @@ async function initAnalytics() {
     </div>
   `;
 
-  // ── CHART 1: Yield Over Time ────────────────────────────────────
-  if (RAW.yields.length && document.getElementById('yieldTimeChart')) {
-    const cropColors = { Rice:'#22c55e', Corn:'#3b82f6', Vegetables:'#f59e0b' };
-    const defaultColors = ['#8b5cf6','#ef4444','#f97316'];
+  // ── CHART 1: Yield Over Time — from yield_records ───────────────
+  if (RAW.yieldRecs.length && document.getElementById('yieldTimeChart')) {
+    const cropColors = { Rice:'#22c55e', Corn:'#3b82f6', Vegetables:'#f59e0b', Wheat:'#8b5cf6', Tomatoes:'#ef4444', Sugarcane:'#f97316', Banana:'#eab308', Coconut:'#14b8a6' };
+    const defaultColors = ['#8b5cf6','#ef4444','#f97316','#06b6d4','#84cc16'];
     new Chart(document.getElementById('yieldTimeChart'), {
       type:'line',
       data:{
@@ -443,7 +439,7 @@ async function initAnalytics() {
   }
 
   // ── Real-time: reload when any module changes ──────────────────
-  ['tasks','attendance','inventory_items','ai_predictions','crm_contacts'].forEach(table => {
+  ['tasks','attendance','inventory_items','yield_records','crm_contacts'].forEach(table => {
     db.channel(`analytics-${table}`)
       .on('postgres_changes', { event:'*', schema:'public', table }, () => initAnalytics())
       .subscribe();
