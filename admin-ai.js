@@ -152,7 +152,7 @@ Return ONLY this exact JSON structure:
       </div>
 
       <div style="display:flex;border-bottom:2px solid var(--border);margin-bottom:1.5rem;">
-        ${[['predict','🔮 New Prediction'],['history','📋 History']].map(([id,label]) => `
+        ${[['predict','🔮 New Prediction'],['history','📋 Predictions']].map(([id,label]) => `
           <button onclick="AI.tab('${id}')"
             style="background:none;border:none;padding:.55rem 1.2rem;font-family:'Poppins',sans-serif;font-size:.83rem;font-weight:600;cursor:pointer;
                    border-bottom:2px solid ${activeTab===id?'var(--green-dark)':'transparent'};

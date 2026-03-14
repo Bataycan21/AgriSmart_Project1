@@ -263,14 +263,7 @@ async function loadDashboard() {
     </div>
 
     <!-- CHARTS ROW 1 -->
-    <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:1rem;margin-bottom:1rem;">
-      <div class="card">
-        <div style="font-weight:700;font-size:1rem;margin-bottom:.15rem;">Yield Trends</div>
-        <div style="font-size:.75rem;color:var(--muted);margin-bottom:1rem;">Monthly yield vs target (tons)</div>
-        ${preds.length
-          ? `<canvas id="yieldChart" height="140"></canvas>`
-          : `<div style="text-align:center;padding:3rem;color:var(--muted);font-size:.82rem;">No AI prediction data yet.</div>`}
-      </div>
+    <div style="display:grid;grid-template-columns:1fr;gap:1rem;margin-bottom:1rem;">
       <div class="card">
         <div style="font-weight:700;font-size:1rem;margin-bottom:.15rem;">CRM Contacts</div>
         <div style="font-size:.75rem;color:var(--muted);margin-bottom:1rem;">Buyers · Suppliers · Partners</div>
@@ -344,14 +337,7 @@ async function loadDashboard() {
     </div>
 
     <!-- CHARTS ROW 3 -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;">
-      <div class="card">
-        <div style="font-weight:700;font-size:1rem;margin-bottom:.15rem;">Yield Over Time</div>
-        <div style="font-size:.75rem;color:var(--muted);margin-bottom:1rem;">Monthly crop yield in kg · from AI Predictions</div>
-        ${preds.length
-          ? `<canvas id="yieldTimeChart" height="130"></canvas>`
-          : `<div style="text-align:center;padding:3rem;color:var(--muted);font-size:.82rem;">No AI prediction data yet.</div>`}
-      </div>
+    <div style="display:grid;grid-template-columns:1fr;gap:1rem;margin-bottom:1rem;">
       <div class="card">
         <div style="font-weight:700;font-size:1rem;margin-bottom:.15rem;">Inventory Stock Health</div>
         <div style="font-size:.75rem;color:var(--muted);margin-bottom:1rem;">Current levels · 🟢 OK &nbsp;🟡 Low &nbsp;🔴 Out</div>
@@ -460,26 +446,6 @@ async function loadDashboard() {
   const extraColors = ['#8b5cf6','#ef4444','#f97316'];
 
   // Chart 1: Yield Trends (actual vs simple target)
-  if (preds.length && document.getElementById('yieldChart')) {
-    const yieldActual = new Array(12).fill(0);
-    preds.forEach(p => {
-      const m = new Date(p.created_at).getMonth();
-      yieldActual[m] += (p.per_ha_yield||0) * (p.land_area||1);
-    });
-    const maxY = Math.max(...yieldActual.filter(v=>v>0)) || 5;
-    const target = yieldActual.map((_,i) => parseFloat((maxY * 0.85 * (i+1)/12).toFixed(2)));
-    new Chart(document.getElementById('yieldChart'), {
-      type:'line',
-      data:{
-        labels: vm,
-        datasets:[
-          { label:'Actual Yield', data:yieldActual.slice(0,vm.length), borderColor:'#2D5A27', backgroundColor:'rgba(45,90,39,0.06)', tension:.4, pointRadius:4, pointBackgroundColor:'#2D5A27', fill:true, borderWidth:2 },
-          { label:'Target',       data:target.slice(0,vm.length),      borderColor:'#A8C69F', borderDash:[5,5], tension:.4, pointRadius:3, pointBackgroundColor:'#A8C69F', borderWidth:1.5 },
-        ]
-      },
-      options:{ plugins:{ legend:{ labels:{ font:cf, boxWidth:18, padding:14 }}, tooltip:tip }, scales:{ x:{ grid:{ display:false }, ticks:{ font:cf }}, y:{ grid:{ color:'#f3f4f6' }, ticks:{ font:cf }}}, responsive:true }
-    });
-  }
 
   // Chart 2: CRM Contacts by type (monthly)
   if (crm.length && document.getElementById('crmChart')) {
@@ -542,27 +508,6 @@ async function loadDashboard() {
   }
 
   // Chart 5: Yield Over Time by crop
-  if (preds.length && document.getElementById('yieldTimeChart')) {
-    new Chart(document.getElementById('yieldTimeChart'), {
-      type:'line',
-      data:{
-        labels: vm,
-        datasets: crops.map((crop, i) => ({
-          label: crop,
-          data: yieldByCrop[crop].slice(0, vm.length),
-          borderColor: cropColors[crop] || extraColors[i % extraColors.length],
-          tension:.4, pointRadius:4,
-          pointBackgroundColor: cropColors[crop] || extraColors[i % extraColors.length],
-          borderWidth:2, fill:false,
-        }))
-      },
-      options:{
-        plugins:{ legend:{ labels:{ font:cf, boxWidth:16, padding:14 }}, tooltip:{ ...tip, callbacks:{ label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString()} kg` }}},
-        scales:{ x:{ grid:{ display:false }, ticks:{ font:cf }}, y:{ grid:{ color:'#f3f4f6' }, ticks:{ font:cf, callback: v => v>=1000?(v/1000).toFixed(1)+'k':v }}},
-        responsive:true
-      }
-    });
-  }
 
   // Chart 6: Inventory Stock Health
   if (inventory.length && document.getElementById('inventoryChart')) {
